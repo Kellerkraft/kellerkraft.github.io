@@ -25,6 +25,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get, remove, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyCovESjJ-1UPTKGdv3tiggabIgJsPZpUJI",
@@ -38,8 +39,17 @@ const firebaseConfig = {
 
 const OWNER_PIN = "1234";
 
-const app = initializeApp(firebaseConfig);
-const db  = getDatabase(app);
+const app  = initializeApp(firebaseConfig);
+const db   = getDatabase(app);
+const auth = getAuth(app);
+
+// Stille anonyme Anmeldung: kein Login-Screen, keine sichtbare Änderung fuer die
+// Nutzer:innen. Sie erzeugt aber eine gueltige "auth"-Identitaet, sodass die
+// Datenbank-Regeln "auth != null" verlangen koennen statt fuer jeden offen zu sein.
+signInAnonymously(auth).catch(err => {
+  console.error("Anonyme Firebase-Anmeldung fehlgeschlagen:", err);
+});
+
 const statusRef   = ref(db, "gym/status");
 const scheduleRef = ref(db, "gym/schedule");
 
@@ -871,32 +881,10 @@ async function getFullUserHistory(user) {
   const data = snap.val() || {};
   const result = {};
   Object.entries(data).forEach(([exId, entries]) => {
-    const list = Object.entries(entries).map(([key, val]) => ({ ...val, _key: key })).sort((a,b)=>b.date-a.date);
+    const list = Object.values(entries).sort((a,b)=>b.date-a.date);
     result[exId] = list;
   });
   return result;
-}
-
-async function updateLogEntry(user, exId, key, updates) {
-  try {
-    await set(ref(db, `gym/logs/${user}/${exId}/${key}`), updates);
-    showToast("Eintrag aktualisiert.", "success", 2000);
-    return true;
-  } catch (err) {
-    showToast("Aktualisierung fehlgeschlagen.", "error");
-    return false;
-  }
-}
-
-async function deleteLogEntry(user, exId, key) {
-  try {
-    await remove(ref(db, `gym/logs/${user}/${exId}/${key}`));
-    showToast("Eintrag gelöscht.", "success", 2000);
-    return true;
-  } catch (err) {
-    showToast("Löschen fehlgeschlagen.", "error");
-    return false;
-  }
 }
 
 async function getAllUsers() {
@@ -1127,13 +1115,7 @@ async function renderUserHistory(user) {
         const isPR = prDates.has(e.date);
         const prBadge = isPR ? `<span class="pr-badge" title="Neues persönliches Bestgewicht">🏆 PR</span>` : "";
         const rackInfo = (e.rackSetting != null) ? `<div class="upcoming-rack">${e.rackLabel || "Rack-Einstellung"}: Stufe ${e.rackSetting}</div>` : "";
-        html += `<div class="upcoming-row log-row" data-exid="${exId}" data-key="${e._key}" data-weight="${e.weight}" data-reps="${e.reps}">
-          <div><div class="upcoming-when">${d}</div><div class="upcoming-label">${e.weight} kg × ${e.reps} Wdh. ${prBadge}</div>${rackInfo}</div>
-          <div class="log-row-actions">
-            <button class="log-edit-btn" title="Bearbeiten">✏️</button>
-            <button class="log-delete-btn" title="Löschen">🗑️</button>
-          </div>
-        </div>`;
+        html += `<div class="upcoming-row"><div><div class="upcoming-when">${d}</div><div class="upcoming-label">${e.weight} kg × ${e.reps} Wdh. ${prBadge}</div>${rackInfo}</div></div>`;
       });
       html += `</div>`;
     });
@@ -1143,46 +1125,6 @@ async function renderUserHistory(user) {
   document.getElementById("backToTrainingBtn").addEventListener("click", renderTrainingSetup);
   const exportBtn = document.getElementById("exportCsvBtn");
   if (exportBtn) exportBtn.addEventListener("click", () => exportUserDataAsCSV(user));
-
-  document.querySelectorAll(".log-delete-btn").forEach(btn => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      const row = btn.closest(".log-row");
-      if (!confirm("Diesen Eintrag wirklich löschen?")) return;
-      const ok = await deleteLogEntry(user, row.dataset.exid, row.dataset.key);
-      if (ok) renderUserHistory(user);
-    });
-  });
-
-  document.querySelectorAll(".log-edit-btn").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const row = btn.closest(".log-row");
-      if (row.querySelector(".log-edit-form")) return;
-      const form = document.createElement("div");
-      form.className = "log-edit-form";
-      form.innerHTML = `
-        <div class="time-grid">
-          <input type="number" step="0.5" class="time-input edit-weight" value="${row.dataset.weight}" placeholder="Gewicht (kg)">
-          <input type="number" class="time-input edit-reps" value="${row.dataset.reps}" placeholder="Wiederholungen">
-        </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn-main btn-lime save-edit-btn" style="margin-top:0">Speichern</button>
-          <button class="btn-main btn-dark cancel-edit-btn" style="margin-top:0">Abbrechen</button>
-        </div>`;
-      row.appendChild(form);
-      form.querySelector(".cancel-edit-btn").addEventListener("click", () => form.remove());
-      form.querySelector(".save-edit-btn").addEventListener("click", async () => {
-        const newWeight = parseFloat(form.querySelector(".edit-weight").value) || 0;
-        const newReps = parseInt(form.querySelector(".edit-reps").value) || 0;
-        const original = history[row.dataset.exid].find(x => x._key === row.dataset.key);
-        const updated = { ...original, weight: newWeight, reps: newReps };
-        delete updated._key;
-        const ok = await updateLogEntry(user, row.dataset.exid, row.dataset.key, updated);
-        if (ok) renderUserHistory(user);
-      });
-    });
-  });
 
   if (exIds.length > 0) {
     exIds.forEach(exId => {
@@ -1230,71 +1172,6 @@ async function renderWarmup() {
   document.getElementById("startExercisesBtn").addEventListener("click", () => {
     renderTrainingExercise();
   });
-}
-
-let restTimerInterval = null;
-
-function renderRestTimer() {
-  clearInterval(restTimerInterval);
-  const wrap = document.getElementById("trainingContent");
-  const savedDuration = parseInt(localStorage.getItem("kg_rest_duration")) || 90;
-  let remaining = savedDuration;
-
-  wrap.innerHTML = `<div class="section-title">Pause</div>
-    <div class="upcoming-wrap" style="text-align:center">
-      <div class="sub" style="margin-bottom:8px">Nächste Übung: ${currentWorkoutQueue[currentExerciseIdx]?.name || ""}</div>
-      <div id="restTimerDisplay" style="font-family:'Bebas Neue',sans-serif;font-size:64px;letter-spacing:2px;color:#9fe84a;margin:10px 0">${formatRestTime(remaining)}</div>
-      <div class="dur-row" id="restDurRow" style="margin-bottom:14px">
-        ${[30,60,90,120].map(s=>`<button class="btn-dur${s===savedDuration?" active":""}" data-sec="${s}">${s}s</button>`).join("")}
-      </div>
-      <button id="restPauseBtn" class="btn-main btn-dark" style="margin-bottom:8px">⏸ Pausieren</button>
-      <button id="restSkipBtn" class="btn-main btn-lime">Überspringen →</button>
-    </div>`;
-
-  let isPaused = false;
-  const display = document.getElementById("restTimerDisplay");
-
-  function tick() {
-    if (isPaused) return;
-    remaining--;
-    if (remaining <= 0) {
-      clearInterval(restTimerInterval);
-      display.textContent = "0:00";
-      showToast("Pause beendet – weiter geht's!", "success", 2500);
-      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
-      setTimeout(() => renderTrainingExercise(), 600);
-      return;
-    }
-    display.textContent = formatRestTime(remaining);
-  }
-  restTimerInterval = setInterval(tick, 1000);
-
-  document.querySelectorAll("#restDurRow .btn-dur").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const sec = parseInt(btn.dataset.sec);
-      localStorage.setItem("kg_rest_duration", sec);
-      remaining = sec;
-      display.textContent = formatRestTime(remaining);
-      document.querySelectorAll("#restDurRow .btn-dur").forEach(b=>b.classList.remove("active"));
-      btn.classList.add("active");
-    });
-  });
-
-  document.getElementById("restPauseBtn").addEventListener("click", (e) => {
-    isPaused = !isPaused;
-    e.target.textContent = isPaused ? "▶ Weiter" : "⏸ Pausieren";
-  });
-
-  document.getElementById("restSkipBtn").addEventListener("click", () => {
-    clearInterval(restTimerInterval);
-    renderTrainingExercise();
-  });
-}
-
-function formatRestTime(sec) {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${String(s).padStart(2,"0")}`;
 }
 
 async function renderTrainingExercise() {
@@ -1392,10 +1269,8 @@ async function renderTrainingExercise() {
     currentExerciseIdx++;
     if (currentExerciseIdx >= currentWorkoutQueue.length) {
       await saveLastWorkout(trainingUser, currentWorkoutQueue.map(e=>e.id));
-      renderTrainingExercise();
-    } else {
-      renderRestTimer();
     }
+    renderTrainingExercise();
   });
   document.getElementById("skipExBtn").addEventListener("click", () => { currentExerciseIdx++; renderTrainingExercise(); });
 }
@@ -1568,11 +1443,8 @@ body {
 
 .upcoming-wrap { background: #111; border: 1px solid #1c1c1c; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
 .upcoming-title { font-size: 10px; letter-spacing: 4px; color: #7a7a7a; text-transform: uppercase; margin-bottom: 12px; }
-.upcoming-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #1c1c1c; flex-wrap: wrap; }
+.upcoming-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #1c1c1c; }
 .upcoming-row:last-child { border-bottom: none; padding-bottom: 0; }
-.log-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.log-edit-btn, .log-delete-btn { background: var(--btn-dark-bg); border: 1px solid var(--border-soft); border-radius: 6px; width: 30px; height: 30px; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-.log-edit-form { width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-soft); }
 .upcoming-when { font-size: 12px; color: #cdf94a; letter-spacing: .5px; }
 .upcoming-label { font-size: 13px; color: #ccc; margin-top: 2px; }
 .del-btn { background: none; border: 1px solid #333; color: #999; border-radius: 6px; padding: 5px 9px; cursor: pointer; font-size: 12px; flex-shrink: 0; margin-left: 12px; }
@@ -1732,7 +1604,6 @@ html[data-theme="light"] ::placeholder { color: #999; }
 html[data-theme="light"] .muscle-static, html[data-theme="light"] .muscle { fill: var(--bg-input); stroke: var(--border-soft); }
 html[data-theme="light"] .muscle.active { fill: #4c8a15; stroke: #2f6b0a; }
 html[data-theme="light"] .legend-dot.active { background: #4c8a15; border-color: #2f6b0a; }
-html[data-theme="light"] .log-edit-btn, html[data-theme="light"] .log-delete-btn { background: var(--btn-dark-bg); border-color: var(--border-soft); }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
@@ -2343,7 +2214,7 @@ html[data-theme="light"] .log-edit-btn, html[data-theme="light"] .log-delete-btn
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version">Keller Gym · v1.9.0 · Stand: 14.07.2026</div>
+<div class="app-footer-version">Keller Gym · v1.8.0 · Stand: 14.07.2026</div>
 
 </body>
 </html>
