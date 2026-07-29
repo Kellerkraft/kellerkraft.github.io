@@ -25,7 +25,6 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, onValue, set, get, remove, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey:            "AIzaSyCovESjJ-1UPTKGdv3tiggabIgJsPZpUJI",
@@ -39,17 +38,8 @@ const firebaseConfig = {
 
 const OWNER_PIN = "1234";
 
-const app  = initializeApp(firebaseConfig);
-const db   = getDatabase(app);
-const auth = getAuth(app);
-
-// Stille anonyme Anmeldung: kein Login-Screen, keine sichtbare Änderung fuer die
-// Nutzer:innen. Sie erzeugt aber eine gueltige "auth"-Identitaet, sodass die
-// Datenbank-Regeln "auth != null" verlangen koennen statt fuer jeden offen zu sein.
-signInAnonymously(auth).catch(err => {
-  console.error("Anonyme Firebase-Anmeldung fehlgeschlagen:", err);
-});
-
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
 const statusRef   = ref(db, "gym/status");
 const scheduleRef = ref(db, "gym/schedule");
 
@@ -828,6 +818,7 @@ let selectedDuration = 30;
 let currentWorkoutQueue = [];
 let currentExerciseIdx = 0;
 let completedBodies = new Set();
+let currentSets = []; // Saetze der aktuell angezeigten Uebung: [{weight, reps}, ...]
 
 const WARMUP_EXAMPLES = [
   "Hyperextensions am Ab & Back Trainer – 1 x 12 (locker, ohne Zusatzgewicht)",
@@ -881,10 +872,32 @@ async function getFullUserHistory(user) {
   const data = snap.val() || {};
   const result = {};
   Object.entries(data).forEach(([exId, entries]) => {
-    const list = Object.values(entries).sort((a,b)=>b.date-a.date);
+    const list = Object.entries(entries).map(([key, val]) => ({ ...val, _key: key })).sort((a,b)=>b.date-a.date);
     result[exId] = list;
   });
   return result;
+}
+
+async function updateLogEntry(user, exId, key, updates) {
+  try {
+    await set(ref(db, `gym/logs/${user}/${exId}/${key}`), updates);
+    showToast("Eintrag aktualisiert.", "success", 2000);
+    return true;
+  } catch (err) {
+    showToast("Aktualisierung fehlgeschlagen.", "error");
+    return false;
+  }
+}
+
+async function deleteLogEntry(user, exId, key) {
+  try {
+    await remove(ref(db, `gym/logs/${user}/${exId}/${key}`));
+    showToast("Eintrag gelöscht.", "success", 2000);
+    return true;
+  } catch (err) {
+    showToast("Löschen fehlgeschlagen.", "error");
+    return false;
+  }
 }
 
 async function getAllUsers() {
@@ -1115,7 +1128,13 @@ async function renderUserHistory(user) {
         const isPR = prDates.has(e.date);
         const prBadge = isPR ? `<span class="pr-badge" title="Neues persönliches Bestgewicht">🏆 PR</span>` : "";
         const rackInfo = (e.rackSetting != null) ? `<div class="upcoming-rack">${e.rackLabel || "Rack-Einstellung"}: Stufe ${e.rackSetting}</div>` : "";
-        html += `<div class="upcoming-row"><div><div class="upcoming-when">${d}</div><div class="upcoming-label">${e.weight} kg × ${e.reps} Wdh. ${prBadge}</div>${rackInfo}</div></div>`;
+        html += `<div class="upcoming-row log-row" data-exid="${exId}" data-key="${e._key}" data-weight="${e.weight}" data-reps="${e.reps}">
+          <div><div class="upcoming-when">${d}</div><div class="upcoming-label">${e.weight} kg × ${e.reps} Wdh. ${prBadge}</div>${rackInfo}</div>
+          <div class="log-row-actions">
+            <button class="log-edit-btn" title="Bearbeiten">✏️</button>
+            <button class="log-delete-btn" title="Löschen">🗑️</button>
+          </div>
+        </div>`;
       });
       html += `</div>`;
     });
@@ -1125,6 +1144,46 @@ async function renderUserHistory(user) {
   document.getElementById("backToTrainingBtn").addEventListener("click", renderTrainingSetup);
   const exportBtn = document.getElementById("exportCsvBtn");
   if (exportBtn) exportBtn.addEventListener("click", () => exportUserDataAsCSV(user));
+
+  document.querySelectorAll(".log-delete-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const row = btn.closest(".log-row");
+      if (!confirm("Diesen Eintrag wirklich löschen?")) return;
+      const ok = await deleteLogEntry(user, row.dataset.exid, row.dataset.key);
+      if (ok) renderUserHistory(user);
+    });
+  });
+
+  document.querySelectorAll(".log-edit-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const row = btn.closest(".log-row");
+      if (row.querySelector(".log-edit-form")) return;
+      const form = document.createElement("div");
+      form.className = "log-edit-form";
+      form.innerHTML = `
+        <div class="time-grid">
+          <input type="number" step="0.5" class="time-input edit-weight" value="${row.dataset.weight}" placeholder="Gewicht (kg)">
+          <input type="number" class="time-input edit-reps" value="${row.dataset.reps}" placeholder="Wiederholungen">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn-main btn-lime save-edit-btn" style="margin-top:0">Speichern</button>
+          <button class="btn-main btn-dark cancel-edit-btn" style="margin-top:0">Abbrechen</button>
+        </div>`;
+      row.appendChild(form);
+      form.querySelector(".cancel-edit-btn").addEventListener("click", () => form.remove());
+      form.querySelector(".save-edit-btn").addEventListener("click", async () => {
+        const newWeight = parseFloat(form.querySelector(".edit-weight").value) || 0;
+        const newReps = parseInt(form.querySelector(".edit-reps").value) || 0;
+        const original = history[row.dataset.exid].find(x => x._key === row.dataset.key);
+        const updated = { ...original, weight: newWeight, reps: newReps };
+        delete updated._key;
+        const ok = await updateLogEntry(user, row.dataset.exid, row.dataset.key, updated);
+        if (ok) renderUserHistory(user);
+      });
+    });
+  });
 
   if (exIds.length > 0) {
     exIds.forEach(exId => {
@@ -1174,6 +1233,71 @@ async function renderWarmup() {
   });
 }
 
+let restTimerInterval = null;
+
+function renderRestTimer() {
+  clearInterval(restTimerInterval);
+  const wrap = document.getElementById("trainingContent");
+  const savedDuration = parseInt(localStorage.getItem("kg_rest_duration")) || 90;
+  let remaining = savedDuration;
+
+  wrap.innerHTML = `<div class="section-title">Pause</div>
+    <div class="upcoming-wrap" style="text-align:center">
+      <div class="sub" style="margin-bottom:8px">Nächste Übung: ${currentWorkoutQueue[currentExerciseIdx]?.name || ""}</div>
+      <div id="restTimerDisplay" style="font-family:'Bebas Neue',sans-serif;font-size:64px;letter-spacing:2px;color:#9fe84a;margin:10px 0">${formatRestTime(remaining)}</div>
+      <div class="dur-row" id="restDurRow" style="margin-bottom:14px">
+        ${[30,60,90,120].map(s=>`<button class="btn-dur${s===savedDuration?" active":""}" data-sec="${s}">${s}s</button>`).join("")}
+      </div>
+      <button id="restPauseBtn" class="btn-main btn-dark" style="margin-bottom:8px">⏸ Pausieren</button>
+      <button id="restSkipBtn" class="btn-main btn-lime">Überspringen →</button>
+    </div>`;
+
+  let isPaused = false;
+  const display = document.getElementById("restTimerDisplay");
+
+  function tick() {
+    if (isPaused) return;
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(restTimerInterval);
+      display.textContent = "0:00";
+      showToast("Pause beendet – weiter geht's!", "success", 2500);
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+      setTimeout(() => renderTrainingExercise(), 600);
+      return;
+    }
+    display.textContent = formatRestTime(remaining);
+  }
+  restTimerInterval = setInterval(tick, 1000);
+
+  document.querySelectorAll("#restDurRow .btn-dur").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const sec = parseInt(btn.dataset.sec);
+      localStorage.setItem("kg_rest_duration", sec);
+      remaining = sec;
+      display.textContent = formatRestTime(remaining);
+      document.querySelectorAll("#restDurRow .btn-dur").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+
+  document.getElementById("restPauseBtn").addEventListener("click", (e) => {
+    isPaused = !isPaused;
+    e.target.textContent = isPaused ? "▶ Weiter" : "⏸ Pausieren";
+  });
+
+  document.getElementById("restSkipBtn").addEventListener("click", () => {
+    clearInterval(restTimerInterval);
+    renderTrainingExercise();
+  });
+}
+
+function formatRestTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
+
 async function renderTrainingExercise() {
   const wrap = document.getElementById("trainingContent");
   if (currentExerciseIdx >= currentWorkoutQueue.length) {
@@ -1210,10 +1334,13 @@ async function renderTrainingExercise() {
     <div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
       <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${ex.name}</div>
       <div class="sub" id="recoNote" style="color:#999;margin-bottom:14px">Lade letzten Wert…</div>
+      <div class="field-label" style="margin-bottom:6px">Sätze</div>
+      <div id="setsList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
       <div class="time-grid">
         <div><div class="field-label">Gewicht (kg)</div><input type="number" step="0.5" id="logWeight" class="time-input" placeholder="z.B. 10"></div>
         <div><div class="field-label">Wiederholungen</div><input type="number" id="logReps" class="time-input" placeholder="z.B. 10"></div>
       </div>
+      <button id="addSetBtn" class="btn-main btn-dark" style="margin-top:8px">+ Satz hinzufügen</button>
       <div class="time-grid" style="margin-top:12px">
         <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}"></div>
         <div><div class="field-label">Ziel max. Wdh.</div><input type="number" id="logMax" class="time-input" placeholder="${ex.defMax}"></div>
@@ -1234,6 +1361,41 @@ async function renderTrainingExercise() {
     });
   }
 
+  currentSets = [];
+
+  function renderSetsList() {
+    const listEl = document.getElementById("setsList");
+    if (!listEl) return;
+    if (!currentSets.length) {
+      listEl.innerHTML = `<div class="sub" style="color:#777">Noch keine Sätze hinzugefügt.</div>`;
+      return;
+    }
+    listEl.innerHTML = currentSets.map((s, i) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;background:#0d0d0d;border-radius:8px;padding:8px 12px">
+        <span style="color:#ddd">Satz ${i+1}: <strong style="color:#cdf94a">${s.reps}</strong> Wdh. bei <strong style="color:#cdf94a">${s.weight}</strong> kg</span>
+        <button data-idx="${i}" class="removeSetBtn" style="background:none;border:none;color:#f55;font-size:16px;cursor:pointer;padding:0 4px">✕</button>
+      </div>`).join("");
+    listEl.querySelectorAll(".removeSetBtn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentSets.splice(parseInt(btn.dataset.idx), 1);
+        renderSetsList();
+      });
+    });
+  }
+  renderSetsList();
+
+  document.getElementById("addSetBtn").addEventListener("click", () => {
+    const weight = parseFloat(document.getElementById("logWeight").value) || 0;
+    const reps = parseInt(document.getElementById("logReps").value) || 0;
+    if (reps <= 0) {
+      showToast("Bitte Wiederholungen für den Satz eingeben.", "error", 2200);
+      return;
+    }
+    currentSets.push({ weight, reps });
+    renderSetsList();
+    showToast(`Satz ${currentSets.length} hinzugefügt.`, "success", 1200);
+  });
+
   const last = await getLastLog(trainingUser, ex.id);
   const reco = computeRecommendation(last, ex);
   document.getElementById("recoNote").innerHTML = reco.note + (reco.weight ? `<br><strong style="color:#cdf94a">Empfehlung: ${reco.weight} kg × ${reco.reps} Wdh.</strong>` : `<br><strong style="color:#cdf94a">Empfehlung: ${reco.reps} Wdh. (Gewicht selbst wählen)</strong>`);
@@ -1247,11 +1409,32 @@ async function renderTrainingExercise() {
   }
 
   document.getElementById("doneExBtn").addEventListener("click", async () => {
-    const weight = parseFloat(document.getElementById("logWeight").value) || 0;
-    const reps = parseInt(document.getElementById("logReps").value) || 0;
+    // Falls im letzten Feld noch ein Satz steht, der nicht per "+ Satz hinzufügen" gespeichert wurde, automatisch übernehmen
+    const pendingWeight = parseFloat(document.getElementById("logWeight").value) || 0;
+    const pendingReps = parseInt(document.getElementById("logReps").value) || 0;
+    if (pendingReps > 0 && (!currentSets.length || currentSets[currentSets.length-1].reps !== pendingReps || currentSets[currentSets.length-1].weight !== pendingWeight)) {
+      const lastSet = currentSets[currentSets.length-1];
+      const isDuplicate = lastSet && lastSet.reps === pendingReps && lastSet.weight === pendingWeight;
+      if (!isDuplicate) currentSets.push({ weight: pendingWeight, reps: pendingReps });
+    }
+    if (!currentSets.length) {
+      showToast("Bitte mindestens einen Satz eingeben.", "error", 2200);
+      return;
+    }
+    // Durchschnitt aus allen Sätzen für die Grafik/Übersicht
+    const avgWeight = Math.round((currentSets.reduce((sum, s) => sum + s.weight, 0) / currentSets.length) * 10) / 10;
+    const avgReps = Math.round(currentSets.reduce((sum, s) => sum + s.reps, 0) / currentSets.length);
     const minReps = parseInt(document.getElementById("logMin").value) || ex.defMin;
     const maxReps = parseInt(document.getElementById("logMax").value) || ex.defMax;
-    const logEntry = { weight, reps, minReps, maxReps, date: Date.now(), exerciseName: ex.name };
+    const logEntry = {
+      weight: avgWeight,
+      reps: avgReps,
+      minReps,
+      maxReps,
+      date: Date.now(),
+      exerciseName: ex.name,
+      sets: currentSets.map(s => ({ weight: s.weight, reps: s.reps }))
+    };
     if (ex.rackSetting) {
       const rackInput = document.getElementById("logRackSetting");
       const rackVal = rackInput ? parseFloat(rackInput.value) : NaN;
@@ -1260,7 +1443,7 @@ async function renderTrainingExercise() {
     }
     try {
       await push(logRef(trainingUser, ex.id), logEntry);
-      showToast("Übung gespeichert.", "success", 1800);
+      showToast(`Übung gespeichert (${currentSets.length} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
     } catch (err) {
       showToast("Speichern fehlgeschlagen. Bitte erneut versuchen.", "error");
       return;
@@ -1269,8 +1452,10 @@ async function renderTrainingExercise() {
     currentExerciseIdx++;
     if (currentExerciseIdx >= currentWorkoutQueue.length) {
       await saveLastWorkout(trainingUser, currentWorkoutQueue.map(e=>e.id));
+      renderTrainingExercise();
+    } else {
+      renderRestTimer();
     }
-    renderTrainingExercise();
   });
   document.getElementById("skipExBtn").addEventListener("click", () => { currentExerciseIdx++; renderTrainingExercise(); });
 }
@@ -1443,8 +1628,11 @@ body {
 
 .upcoming-wrap { background: #111; border: 1px solid #1c1c1c; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
 .upcoming-title { font-size: 10px; letter-spacing: 4px; color: #7a7a7a; text-transform: uppercase; margin-bottom: 12px; }
-.upcoming-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #1c1c1c; }
+.upcoming-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #1c1c1c; flex-wrap: wrap; }
 .upcoming-row:last-child { border-bottom: none; padding-bottom: 0; }
+.log-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.log-edit-btn, .log-delete-btn { background: var(--btn-dark-bg); border: 1px solid var(--border-soft); border-radius: 6px; width: 30px; height: 30px; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.log-edit-form { width: 100%; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border-soft); }
 .upcoming-when { font-size: 12px; color: #cdf94a; letter-spacing: .5px; }
 .upcoming-label { font-size: 13px; color: #ccc; margin-top: 2px; }
 .del-btn { background: none; border: 1px solid #333; color: #999; border-radius: 6px; padding: 5px 9px; cursor: pointer; font-size: 12px; flex-shrink: 0; margin-left: 12px; }
@@ -1604,6 +1792,7 @@ html[data-theme="light"] ::placeholder { color: #999; }
 html[data-theme="light"] .muscle-static, html[data-theme="light"] .muscle { fill: var(--bg-input); stroke: var(--border-soft); }
 html[data-theme="light"] .muscle.active { fill: #4c8a15; stroke: #2f6b0a; }
 html[data-theme="light"] .legend-dot.active { background: #4c8a15; border-color: #2f6b0a; }
+html[data-theme="light"] .log-edit-btn, html[data-theme="light"] .log-delete-btn { background: var(--btn-dark-bg); border-color: var(--border-soft); }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
@@ -2214,7 +2403,7 @@ html[data-theme="light"] .legend-dot.active { background: #4c8a15; border-color:
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version">Keller Gym · v1.8.0 · Stand: 14.07.2026</div>
+<div class="app-footer-version">Keller Gym · v1.9.0 · Stand: 14.07.2026</div>
 
 </body>
 </html>
