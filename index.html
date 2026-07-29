@@ -1503,6 +1503,11 @@ function initFaqListeners() {
   });
 }
 
+// Sofort mit lokalem/leerem Stand rendern, damit man direkt etwas eintragen kann,
+// statt auf die erste Antwort von Firebase zu warten
+renderAll();
+renderWeekOverview();
+
 onValue(statusRef, snap => { currentStatus = snap.val(); renderAll(); });
 onValue(scheduleRef, snap => { currentSchedule = snap.val() || {}; renderAll(); if (activeTab==="reserve") renderReservePage(); });
 setInterval(renderAll, 60000);
