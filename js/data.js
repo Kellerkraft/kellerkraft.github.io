@@ -38,6 +38,20 @@ export const EXERCISE_INSTRUCTIONS = {
     ],
     "note": null
   },
+  "legextensioncable": {
+    "steps": [
+      "1. Setup: Fußschlaufe am unteren Kabelzug (Ruderzug) einhängen, auf der Hantelbank sitzen, Schlaufe um den Knöchel legen, Kette so einstellen, dass leichte Vorspannung besteht.",
+      "2. Ausführung: Unterschenkel nach vorne strecken bis das Bein fast gerade ist, oben kurz anspannen, dann kontrolliert wieder absenken."
+    ],
+    "note": "💡 Auf stabile Sitzposition achten, Oberkörper ruhig halten, nur das Kniegelenk bewegt sich."
+  },
+  "legcurlcable": {
+    "steps": [
+      "1. Setup: Fußschlaufe direkt am unteren Kabelzug (Ruderzug) einhängen, stehend davor positionieren, Knie am Kniepolster/Anschlag abstützen.",
+      "2. Ausführung: Fuß Richtung Gesäß nach oben ziehen, Oberkörper stabil und aufrecht halten, dann kontrolliert wieder strecken."
+    ],
+    "note": "💡 Bewegung langsam ausführen, Standbein leicht beugen für mehr Stabilität."
+  },
   "declinesitup": {
     "steps": [
       "1. Setup: Ab & Back Trainer – Rückenteil in eine schräge Position einstellen, Fußstütze hochklappen.",
@@ -243,6 +257,8 @@ export const EXERCISES = [
   { id:"rdl", name:"Romanian Deadlift", body:"beine", equip:["langhantel"], level:"advanced", defMin:8, defMax:12 },
   { id:"nordic", name:"Nordic Curls", body:"beine", equip:["rack"], level:"advanced", defMin:4, defMax:8 },
   { id:"kickback", name:"Kabel-Kickback", body:"beine", equip:["kabel"], level:"mid", defMin:12, defMax:15 },
+  { id:"legextensioncable", name:"Leg Extension sitzend (Kabelzug)", body:"beine", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
+  { id:"legcurlcable", name:"Leg Curl stehend (Kabelzug)", body:"beine", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
   { id:"declinesitup", name:"Decline Sit-ups", body:"bauch", equip:["abback"], level:"easy", defMin:12, defMax:20 },
   { id:"weightedsitup", name:"Weighted Sit-up", body:"bauch", equip:["abback","kurzhantel"], level:"easy", defMin:10, defMax:15 },
   { id:"hanginglegraise", name:"Hanging Leg Raise", body:"bauch", equip:["rack"], level:"mid", defMin:8, defMax:15 },
