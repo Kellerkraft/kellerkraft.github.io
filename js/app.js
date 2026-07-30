@@ -1472,11 +1472,13 @@ async function renderTrainingExercise() {
       }
     }
     completedBodies.add(ex.body);
+    await saveLastWorkout(trainingUser, currentWorkoutQueue.slice(0, currentExerciseIdx + 1).map(e=>e.id));
     currentExerciseIdx++;
     if (currentExerciseIdx >= currentWorkoutQueue.length) {
-      await saveLastWorkout(trainingUser, currentWorkoutQueue.map(e=>e.id));
+      await saveLastWorkout(trainingUser, currentWorkoutQueue.slice(0, currentExerciseIdx).map(e=>e.id));
       renderTrainingExercise();
     } else {
+      await refreshLastWorkoutBox();
       renderRestTimer();
     }
   });
