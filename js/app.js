@@ -517,6 +517,125 @@ function levelsUpTo(level) {
   return LEVEL_ORDER.slice(0, idx + 1);
 }
 
+/* ================= ÜBUNGEN-SEITE (dynamisch, mit Bearbeitung) ================= */
+
+function exerciseOverrideRef(exId) { return ref(db, `gym/exerciseOverrides/${exId}`); }
+
+async function getExerciseOverrides() {
+  try {
+    const snap = await get(ref(db, "gym/exerciseOverrides"));
+    return snap.val() || {};
+  } catch (err) {
+    showToast("Übungs-Änderungen konnten nicht geladen werden.", "error");
+    return {};
+  }
+}
+
+async function saveExerciseOverride(exId, override) {
+  try {
+    await set(exerciseOverrideRef(exId), override);
+    showToast("Übung aktualisiert.", "success", 2000);
+    return true;
+  } catch (err) {
+    showToast("Speichern fehlgeschlagen.", "error");
+    return false;
+  }
+}
+
+function getExerciseDisplay(ex, overrides) {
+  const o = overrides[ex.id] || {};
+  const baseInstr = EXERCISE_INSTRUCTIONS[ex.id] || { steps: [], note: null };
+  return {
+    name: o.name || ex.name,
+    steps: o.steps || baseInstr.steps || [],
+    note: (o.note !== undefined) ? o.note : baseInstr.note
+  };
+}
+
+const BODY_ICONS = { beine: "🍑", bauch: "🧘", ruecken: "🫁", arme: "💪", brust: "🫇" };
+const BODY_ORDER = ["beine", "bauch", "ruecken", "arme", "brust"];
+
+async function renderUebungenPage() {
+  const wrap = document.getElementById("uebungenDynamicWrap");
+  if (!wrap) return;
+  const overrides = await getExerciseOverrides();
+  const groups = {};
+  EXERCISES.forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
+
+  wrap.innerHTML = BODY_ORDER.filter(b => groups[b]).map(body => `
+    <div class="faq-section">
+      <button class="faq-section-btn">
+        <span class="faq-section-icon">${BODY_ICONS[body] || "🏋️"}</span>
+        <span class="faq-section-label">${BODY_LABELS[body] || body}</span>
+        <span class="faq-section-chevron">▾</span>
+      </button>
+      <div class="faq-section-body"><div class="faq-section-inner">
+        ${groups[body].map(ex => {
+          const d = getExerciseDisplay(ex, overrides);
+          return `
+          <div class="faq-item" data-exid="${ex.id}">
+            <button class="faq-question">${d.name} <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                ${d.steps.map(s => `<li>${s}</li>`).join("")}
+              </ul>
+              ${d.note ? `<div class="faq-note">${d.note}</div>` : ""}
+              <div style="margin-top:10px">
+                <button class="btn-main btn-dark edit-exercise-btn" data-exid="${ex.id}" style="width:100%">✏️ Info bearbeiten</button>
+              </div>
+              <div class="exercise-edit-form" id="editForm-${ex.id}" style="display:none; margin-top:12px;"></div>
+            </div></div>
+          </div>
+        `; }).join("")}
+      </div></div>
+    </div>
+  `).join("");
+
+  wrap.querySelectorAll(".faq-section-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const section = btn.parentElement;
+      const isOpen = section.classList.contains("open");
+      section.parentElement.querySelectorAll(".faq-section").forEach(s => s.classList.remove("open"));
+      if (!isOpen) section.classList.add("open");
+    });
+  });
+  wrap.querySelectorAll(".faq-question").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const item = btn.parentElement;
+      const isOpen = item.classList.contains("open");
+      item.closest(".faq-section-inner").querySelectorAll(".faq-item").forEach(i => i.classList.remove("open"));
+      if (!isOpen) item.classList.add("open");
+    });
+  });
+  wrap.querySelectorAll(".edit-exercise-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const exId = btn.dataset.exid;
+      const ex = EXERCISES.find(x => x.id === exId);
+      const d = getExerciseDisplay(ex, overrides);
+      const form = document.getElementById(`editForm-${exId}`);
+      const isOpen = form.style.display !== "none";
+      if (isOpen) { form.style.display = "none"; form.innerHTML = ""; return; }
+      form.style.display = "block";
+      form.innerHTML = `
+        <input class="name-input" id="editName-${exId}" placeholder="Name" value="${d.name.replace(/"/g,'&quot;')}">
+        <textarea class="name-input" id="editSteps-${exId}" rows="5" style="margin-top:8px; resize:vertical;" placeholder="Ein Schritt pro Zeile">${d.steps.join("\n")}</textarea>
+        <input class="name-input" id="editNote-${exId}" style="margin-top:8px;" placeholder="Hinweis (optional)" value="${(d.note||"").replace(/"/g,'&quot;')}">
+        <button class="btn-main btn-lime save-exercise-edit-btn" data-exid="${exId}" style="width:100%; margin-top:10px;">💾 Speichern</button>
+      `;
+      form.querySelector(".save-exercise-edit-btn").addEventListener("click", async () => {
+        const name = document.getElementById(`editName-${exId}`).value.trim();
+        const stepsRaw = document.getElementById(`editSteps-${exId}`).value;
+        const note = document.getElementById(`editNote-${exId}`).value.trim();
+        const steps = stepsRaw.split("\n").map(s => s.trim()).filter(Boolean);
+        if (!name || steps.length === 0) { alert("Bitte Name und mindestens einen Schritt angeben."); return; }
+        await saveExerciseOverride(exId, { name, steps, note: note || null });
+        renderUebungenPage();
+      });
+    });
+  });
+}
+
 let trainingUser = localStorage.getItem("kg_user") || "";
 let selectedBody = new Set();
 let selectedLevel = null;
@@ -632,6 +751,153 @@ async function getLastWorkout(user) {
   return snap.val();
 }
 
+/* ================= EIGENE WORKOUT-VORLAGEN (CUSTOM WORKOUTS) ================= */
+
+function customWorkoutsRef(user) { return ref(db, `gym/customWorkouts/${user}`); }
+function customWorkoutRef(user, id) { return ref(db, `gym/customWorkouts/${user}/${id}`); }
+
+let manualSelectedExerciseIds = new Set();
+
+async function getCustomWorkouts(user) {
+  try {
+    const snap = await get(customWorkoutsRef(user));
+    const data = snap.val() || {};
+    return Object.entries(data)
+      .map(([id, w]) => ({ id, ...w }))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  } catch (err) {
+    showToast("Eigene Workouts konnten nicht geladen werden.", "error");
+    return [];
+  }
+}
+
+async function saveCustomWorkout(user, name, exerciseIds) {
+  try {
+    const id = push(customWorkoutsRef(user)).key;
+    await set(customWorkoutRef(user, id), { name, exerciseIds, createdAt: Date.now() });
+    showToast(`Workout "${name}" gespeichert.`, "success");
+    return id;
+  } catch (err) {
+    showToast("Workout konnte nicht gespeichert werden.", "error");
+    return null;
+  }
+}
+
+async function deleteCustomWorkout(user, id) {
+  try {
+    await remove(customWorkoutRef(user, id));
+    showToast("Workout gelöscht.", "success", 2000);
+    return true;
+  } catch (err) {
+    showToast("Löschen fehlgeschlagen.", "error");
+    return false;
+  }
+}
+
+function renderExercisePickerList(container) {
+  const groups = {};
+  EXERCISES.forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
+  container.innerHTML = Object.entries(groups).map(([body, list]) => `
+    <div class="section-title" style="margin-top:16px; font-size:0.95em;">${BODY_LABELS[body] || body}</div>
+    ${list.map(e => `
+      <label class="chip" style="display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:10px 12px; margin-bottom:6px; cursor:pointer;">
+        <input type="checkbox" class="manual-ex-checkbox" data-exid="${e.id}" ${manualSelectedExerciseIds.has(e.id) ? "checked" : ""} style="width:auto;">
+        <span>${e.name}</span>
+      </label>
+    `).join("")}
+  `).join("");
+  container.querySelectorAll(".manual-ex-checkbox").forEach(cb => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) manualSelectedExerciseIds.add(cb.dataset.exid);
+      else manualSelectedExerciseIds.delete(cb.dataset.exid);
+    });
+  });
+}
+
+async function renderCustomWorkoutsSection() {
+  const wrap = document.getElementById("customWorkoutsSection");
+  if (!wrap) return;
+  if (!trainingUser) {
+    wrap.innerHTML = `<div class="info-box" style="margin-top:16px">Bitte zuerst oben deinen Namen eingeben, um eigene Workouts zu erstellen und zu speichern.</div>`;
+    return;
+  }
+  const saved = await getCustomWorkouts(trainingUser);
+  wrap.innerHTML = `
+    <div class="section-title" style="margin-top:24px">Eigene Workouts</div>
+    ${saved.length ? `<div class="faq-wrap" style="margin-bottom:12px">${saved.map(w => `
+      <div class="faq-item" data-workoutid="${w.id}">
+        <button class="faq-question">${w.name} <span style="opacity:0.6; font-size:0.85em">(${(w.exerciseIds || []).length} Übungen)</span> <span class="faq-chevron">▾</span></button>
+        <div class="faq-answer"><div class="faq-answer-inner">
+          <ul>
+            ${(w.exerciseIds || []).map(id => { const ex = EXERCISES.find(e => e.id === id); return `<li>${ex ? ex.name : id}</li>`; }).join("")}
+          </ul>
+          <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">▶️ Starten</button>
+            <button class="btn-main btn-dark delete-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">🗑️ Löschen</button>
+          </div>
+        </div></div>
+      </div>
+    `).join("")}</div>` : `<div class="info-box" style="margin-bottom:12px">Noch keine eigenen Workouts gespeichert.</div>`}
+    <button id="createManualWorkoutBtn" class="btn-main btn-dark" style="width:100%">➕ Eigenes Workout erstellen</button>
+    <div id="manualWorkoutBuilder"></div>
+  `;
+
+  wrap.querySelectorAll(".faq-question").forEach(btn => {
+    btn.addEventListener("click", () => btn.closest(".faq-item").classList.toggle("open"));
+  });
+  wrap.querySelectorAll(".start-custom-workout-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const w = saved.find(x => x.id === btn.dataset.workoutid);
+      if (!w) return;
+      currentWorkoutQueue = (w.exerciseIds || []).map(id => EXERCISES.find(ex => ex.id === id)).filter(Boolean);
+      if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
+      currentExerciseIdx = 0;
+      completedBodies = new Set();
+      renderWarmup();
+    });
+  });
+  wrap.querySelectorAll(".delete-custom-workout-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("Dieses Workout wirklich löschen?")) return;
+      await deleteCustomWorkout(trainingUser, btn.dataset.workoutid);
+      renderCustomWorkoutsSection();
+    });
+  });
+  document.getElementById("createManualWorkoutBtn").addEventListener("click", () => {
+    manualSelectedExerciseIds = new Set();
+    renderManualWorkoutBuilder();
+  });
+}
+
+function renderManualWorkoutBuilder() {
+  const builder = document.getElementById("manualWorkoutBuilder");
+  if (!builder) return;
+  builder.innerHTML = `
+    <div class="section-title" style="margin-top:20px">Übungen auswählen</div>
+    <div id="manualExercisePickerList"></div>
+    <input id="manualWorkoutNameInput" class="name-input" style="margin-top:16px" placeholder="Workout-Name, z. B. Leg Day A" maxlength="30">
+    <div style="display:flex; gap:10px; margin-top:14px;">
+      <button id="saveManualWorkoutBtn" class="btn-main btn-lime" style="flex:1;">💾 Speichern</button>
+      <button id="cancelManualWorkoutBtn" class="btn-main btn-dark" style="flex:1;">Abbrechen</button>
+    </div>
+  `;
+  renderExercisePickerList(document.getElementById("manualExercisePickerList"));
+  document.getElementById("saveManualWorkoutBtn").addEventListener("click", async () => {
+    const name = document.getElementById("manualWorkoutNameInput").value.trim();
+    if (!name) { alert("Bitte einen Namen für das Workout eingeben."); return; }
+    if (manualSelectedExerciseIds.size === 0) { alert("Bitte mindestens eine Übung auswählen."); return; }
+    await saveCustomWorkout(trainingUser, name, [...manualSelectedExerciseIds]);
+    manualSelectedExerciseIds = new Set();
+    renderCustomWorkoutsSection();
+  });
+  document.getElementById("cancelManualWorkoutBtn").addEventListener("click", () => {
+    manualSelectedExerciseIds = new Set();
+    builder.innerHTML = "";
+  });
+}
+
 function computeRecommendation(last, ex) {
   const minReps = (last && last.minReps) || ex.defMin;
   const maxReps = (last && last.maxReps) || ex.defMax;
@@ -679,9 +945,10 @@ async function renderTrainingSetup() {
     </div>
 
     <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">Workout erstellen →</button>
+    <div id="customWorkoutsSection"></div>
   `;
 
-  document.getElementById("userNameInput").addEventListener("input", e => { trainingUser = e.target.value.trim(); localStorage.setItem("kg_user", trainingUser); refreshLastWorkoutBox(); });
+  document.getElementById("userNameInput").addEventListener("input", e => { trainingUser = e.target.value.trim(); localStorage.setItem("kg_user", trainingUser); refreshLastWorkoutBox(); renderCustomWorkoutsSection(); });
   document.querySelectorAll(".profile-chip").forEach(btn => {
     btn.addEventListener("click", () => {
       trainingUser = btn.dataset.user;
@@ -723,6 +990,7 @@ async function renderTrainingSetup() {
     renderUserHistory(trainingUser);
   });
   refreshLastWorkoutBox();
+  renderCustomWorkoutsSection();
 }
 
 async function refreshLastWorkoutBox() {
@@ -1193,9 +1461,10 @@ function switchTab(tab) {
   if (tab === "reserve") renderReservePage();
   if (tab === "home") renderWeekOverview();
   if (tab === "training") renderTrainingSetup();
+  if (tab === "uebungen") renderUebungenPage();
 }
 
-const NAV_LABELS = { home: "Status & Check-in", reserve: "Reservieren", training: "Training", ausstattung: "Ausstattung", uebungen: "Übungen", workouts: "Workouts" };
+const NAV_LABELS = { home: "Status & Check-in", reserve: "Reservieren", training: "Training", ausstattung: "Ausstattung", uebungen: "Übungen" };
 
 function initNav() {
   document.getElementById("navToggle").addEventListener("click", () => {
