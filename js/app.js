@@ -898,17 +898,51 @@ function renderManualWorkoutBuilder() {
   });
 }
 
+/* ================= GEWICHTSEMPFEHLUNG MIT RIR (Reps in Reserve) ================= */
+
+function calculateNextWeight(lastSession) {
+  // lastSession = { weight, reps, rir, targetRepsMax }
+  const step = (lastSession.weight >= 20) ? 2.5 : 2;
+  let nextWeight = lastSession.weight;
+  let message = "";
+
+  if (lastSession.rir == null) {
+    message = `Letztes Mal ${lastSession.weight} kg × ${lastSession.reps} Wdh. (keine RIR-Angabe) → gleiches Gewicht, versuche 1 Wdh. mehr.`;
+    return { nextWeight, message };
+  }
+
+  if (lastSession.rir >= 3) {
+    nextWeight += step;
+    message = `Letztes Mal war sehr leicht (RIR ${lastSession.rir}). Steigere um ${step} kg!`;
+  } else if (lastSession.rir >= 1 && lastSession.reps >= lastSession.targetRepsMax) {
+    nextWeight += step;
+    message = `Ziel-Wdh. mit gutem RIR (${lastSession.rir}) erreicht! Zeit für mehr Gewicht.`;
+  } else if (lastSession.rir >= 1) {
+    message = `Bleib bei ${nextWeight} kg (RIR ${lastSession.rir}) und versuche 1 Wdh. mehr.`;
+  } else if (lastSession.rir === 0 && lastSession.reps < lastSession.targetRepsMax) {
+    nextWeight = Math.max(0, nextWeight - step);
+    message = "Letztes Mal war sehr schwer (Muskelversagen). Ein kleines Stück runtergehen.";
+  } else {
+    message = `Bleib bei ${nextWeight} kg und versuche 1 Wdh. mehr.`;
+  }
+
+  return { nextWeight, message };
+}
+
 function computeRecommendation(last, ex) {
   const minReps = (last && last.minReps) || ex.defMin;
   const maxReps = (last && last.maxReps) || ex.defMax;
   if (!last || !last.weight) {
     return { weight: null, reps: minReps, minReps, maxReps, note: "Starte konservativ – wähle ein Gewicht, das du sauber " + minReps + "× schaffst." };
   }
-  if (last.reps >= maxReps) {
-    const smallStep = last.weight >= 20 ? 2.5 : 2;
-    return { weight: last.weight + smallStep, reps: minReps, minReps, maxReps, note: `Letztes Mal ${last.weight} kg × ${last.reps} Wdh. (Ziel erreicht) → leicht mehr Gewicht, Wdh. wieder von vorne steigern.` };
-  }
-  return { weight: last.weight, reps: Math.min(last.reps + 1, maxReps), minReps, maxReps, note: `Letztes Mal ${last.weight} kg × ${last.reps} Wdh. → gleiches Gewicht, versuche 1 Wdh. mehr.` };
+  const { nextWeight, message } = calculateNextWeight({
+    weight: last.weight,
+    reps: last.reps,
+    rir: (last.rir != null) ? last.rir : null,
+    targetRepsMax: maxReps
+  });
+  const suggestedReps = (last.rir != null && last.rir === 0 && last.reps < maxReps) ? minReps : Math.min(last.reps + 1, maxReps);
+  return { weight: nextWeight, reps: suggestedReps, minReps, maxReps, note: message };
 }
 
 /* ================= TRAINING TAB RENDERING ================= */
@@ -1314,6 +1348,10 @@ async function renderTrainingExercise() {
         <div><div class="field-label">Gewicht (kg)</div><input type="number" step="0.5" id="logWeight" class="time-input" placeholder="z.B. 10"></div>
         <div><div class="field-label">Wiederholungen</div><input type="number" id="logReps" class="time-input" placeholder="z.B. 10"></div>
       </div>
+      <div style="margin-top:10px">
+        <div class="field-label">RIR (Wdh. bis Muskelversagen übrig)</div>
+        <input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="z.B. 2">
+      </div>
       <button id="addSetBtn" class="btn-main btn-dark" style="margin-top:8px">+ Satz hinzufügen</button>
       <div class="time-grid" style="margin-top:12px">
         <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}"></div>
@@ -1346,7 +1384,7 @@ async function renderTrainingExercise() {
     }
     listEl.innerHTML = currentSets.map((s, i) => `
       <div style="display:flex;align-items:center;justify-content:space-between;background:#0d0d0d;border-radius:8px;padding:8px 12px">
-        <span style="color:#ddd">Satz ${i+1}: <strong style="color:#cdf94a">${s.reps}</strong> Wdh. bei <strong style="color:#cdf94a">${s.weight}</strong> kg</span>
+        <span style="color:#ddd">Satz ${i+1}: <strong style="color:#cdf94a">${s.reps}</strong> Wdh. bei <strong style="color:#cdf94a">${s.weight}</strong> kg${s.rir != null ? ` <span style="color:#999">(RIR ${s.rir})</span>` : ""}</span>
         <button data-idx="${i}" class="removeSetBtn" style="background:none;border:none;color:#f55;font-size:16px;cursor:pointer;padding:0 4px">✕</button>
       </div>`).join("");
     listEl.querySelectorAll(".removeSetBtn").forEach(btn => {
@@ -1361,11 +1399,13 @@ async function renderTrainingExercise() {
   document.getElementById("addSetBtn").addEventListener("click", () => {
     const weight = parseFloat(document.getElementById("logWeight").value) || 0;
     const reps = parseInt(document.getElementById("logReps").value) || 0;
+    const rirRaw = document.getElementById("logRir").value;
+    const rir = rirRaw !== "" ? parseInt(rirRaw) : null;
     if (reps <= 0) {
       showToast("Bitte Wiederholungen für den Satz eingeben.", "error", 2200);
       return;
     }
-    currentSets.push({ weight, reps });
+    currentSets.push({ weight, reps, rir });
     renderSetsList();
     showToast(`Satz ${currentSets.length} hinzugefügt.`, "success", 1200);
   });
@@ -1375,10 +1415,12 @@ async function renderTrainingExercise() {
     // Falls im letzten Feld noch ein Satz steht, der nicht per "+ Satz hinzufügen" gespeichert wurde, automatisch übernehmen
     const pendingWeight = parseFloat(document.getElementById("logWeight").value) || 0;
     const pendingReps = parseInt(document.getElementById("logReps").value) || 0;
+    const pendingRirRaw = document.getElementById("logRir").value;
+    const pendingRir = pendingRirRaw !== "" ? parseInt(pendingRirRaw) : null;
     if (pendingReps > 0 && (!currentSets.length || currentSets[currentSets.length-1].reps !== pendingReps || currentSets[currentSets.length-1].weight !== pendingWeight)) {
       const lastSet = currentSets[currentSets.length-1];
       const isDuplicate = lastSet && lastSet.reps === pendingReps && lastSet.weight === pendingWeight;
-      if (!isDuplicate) currentSets.push({ weight: pendingWeight, reps: pendingReps });
+      if (!isDuplicate) currentSets.push({ weight: pendingWeight, reps: pendingReps, rir: pendingRir });
     }
     if (!currentSets.length) {
       showToast("Bitte mindestens einen Satz eingeben.", "error", 2200);
@@ -1389,14 +1431,17 @@ async function renderTrainingExercise() {
     const avgReps = Math.round(currentSets.reduce((sum, s) => sum + s.reps, 0) / currentSets.length);
     const minReps = parseInt(document.getElementById("logMin").value) || ex.defMin;
     const maxReps = parseInt(document.getElementById("logMax").value) || ex.defMax;
+    // RIR des letzten protokollierten Satzes – relevant für die nächste Gewichtsempfehlung
+    const lastSetRir = currentSets[currentSets.length - 1]?.rir;
     const logEntry = {
       weight: avgWeight,
       reps: avgReps,
       minReps,
       maxReps,
+      rir: (lastSetRir != null && !isNaN(lastSetRir)) ? lastSetRir : null,
       date: Date.now(),
       exerciseName: ex.name,
-      sets: currentSets.map(s => ({ weight: s.weight, reps: s.reps }))
+      sets: currentSets.map(s => ({ weight: s.weight, reps: s.reps, rir: (s.rir != null && !isNaN(s.rir)) ? s.rir : null }))
     };
     if (ex.rackSetting) {
       const rackInput = document.getElementById("logRackSetting");
