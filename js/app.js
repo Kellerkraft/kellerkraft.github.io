@@ -632,153 +632,6 @@ async function getLastWorkout(user) {
   return snap.val();
 }
 
-/* ================= EIGENE WORKOUT-VORLAGEN (CUSTOM WORKOUTS) ================= */
-
-function customWorkoutsRef(user) { return ref(db, `gym/customWorkouts/${user}`); }
-function customWorkoutRef(user, id) { return ref(db, `gym/customWorkouts/${user}/${id}`); }
-
-let manualSelectedExerciseIds = new Set();
-
-async function getCustomWorkouts(user) {
-  try {
-    const snap = await get(customWorkoutsRef(user));
-    const data = snap.val() || {};
-    return Object.entries(data)
-      .map(([id, w]) => ({ id, ...w }))
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-  } catch (err) {
-    showToast("Eigene Workouts konnten nicht geladen werden.", "error");
-    return [];
-  }
-}
-
-async function saveCustomWorkout(user, name, exerciseIds) {
-  try {
-    const id = push(customWorkoutsRef(user)).key;
-    await set(customWorkoutRef(user, id), { name, exerciseIds, createdAt: Date.now() });
-    showToast(`Workout "${name}" gespeichert.`, "success");
-    return id;
-  } catch (err) {
-    showToast("Workout konnte nicht gespeichert werden.", "error");
-    return null;
-  }
-}
-
-async function deleteCustomWorkout(user, id) {
-  try {
-    await remove(customWorkoutRef(user, id));
-    showToast("Workout gelöscht.", "success", 2000);
-    return true;
-  } catch (err) {
-    showToast("Löschen fehlgeschlagen.", "error");
-    return false;
-  }
-}
-
-function renderExercisePickerList(container) {
-  const groups = {};
-  EXERCISES.forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
-  container.innerHTML = Object.entries(groups).map(([body, list]) => `
-    <div class="section-title" style="margin-top:16px; font-size:0.95em;">${BODY_LABELS[body] || body}</div>
-    ${list.map(e => `
-      <label class="chip" style="display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:10px 12px; margin-bottom:6px; cursor:pointer;">
-        <input type="checkbox" class="manual-ex-checkbox" data-exid="${e.id}" ${manualSelectedExerciseIds.has(e.id) ? "checked" : ""} style="width:auto;">
-        <span>${e.name}</span>
-      </label>
-    `).join("")}
-  `).join("");
-  container.querySelectorAll(".manual-ex-checkbox").forEach(cb => {
-    cb.addEventListener("change", () => {
-      if (cb.checked) manualSelectedExerciseIds.add(cb.dataset.exid);
-      else manualSelectedExerciseIds.delete(cb.dataset.exid);
-    });
-  });
-}
-
-async function renderCustomWorkoutsSection() {
-  const wrap = document.getElementById("customWorkoutsSection");
-  if (!wrap) return;
-  if (!trainingUser) {
-    wrap.innerHTML = `<div class="info-box" style="margin-top:16px">Bitte zuerst oben deinen Namen eingeben, um eigene Workouts zu erstellen und zu speichern.</div>`;
-    return;
-  }
-  const saved = await getCustomWorkouts(trainingUser);
-  wrap.innerHTML = `
-    <div class="section-title" style="margin-top:24px">Eigene Workouts</div>
-    ${saved.length ? `<div class="faq-wrap" style="margin-bottom:12px">${saved.map(w => `
-      <div class="faq-item" data-workoutid="${w.id}">
-        <button class="faq-question">${w.name} <span style="opacity:0.6; font-size:0.85em">(${(w.exerciseIds || []).length} Übungen)</span> <span class="faq-chevron">▾</span></button>
-        <div class="faq-answer"><div class="faq-answer-inner">
-          <ul>
-            ${(w.exerciseIds || []).map(id => { const ex = EXERCISES.find(e => e.id === id); return `<li>${ex ? ex.name : id}</li>`; }).join("")}
-          </ul>
-          <div style="display:flex; gap:10px; margin-top:10px;">
-            <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">▶️ Starten</button>
-            <button class="btn-main btn-dark delete-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">🗑️ Löschen</button>
-          </div>
-        </div></div>
-      </div>
-    `).join("")}</div>` : `<div class="info-box" style="margin-bottom:12px">Noch keine eigenen Workouts gespeichert.</div>`}
-    <button id="createManualWorkoutBtn" class="btn-main btn-dark" style="width:100%">➕ Eigenes Workout erstellen</button>
-    <div id="manualWorkoutBuilder"></div>
-  `;
-
-  wrap.querySelectorAll(".faq-question").forEach(btn => {
-    btn.addEventListener("click", () => btn.closest(".faq-item").classList.toggle("open"));
-  });
-  wrap.querySelectorAll(".start-custom-workout-btn").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const w = saved.find(x => x.id === btn.dataset.workoutid);
-      if (!w) return;
-      currentWorkoutQueue = (w.exerciseIds || []).map(id => EXERCISES.find(ex => ex.id === id)).filter(Boolean);
-      if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
-      currentExerciseIdx = 0;
-      completedBodies = new Set();
-      renderWarmup();
-    });
-  });
-  wrap.querySelectorAll(".delete-custom-workout-btn").forEach(btn => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (!confirm("Dieses Workout wirklich löschen?")) return;
-      await deleteCustomWorkout(trainingUser, btn.dataset.workoutid);
-      renderCustomWorkoutsSection();
-    });
-  });
-  document.getElementById("createManualWorkoutBtn").addEventListener("click", () => {
-    manualSelectedExerciseIds = new Set();
-    renderManualWorkoutBuilder();
-  });
-}
-
-function renderManualWorkoutBuilder() {
-  const builder = document.getElementById("manualWorkoutBuilder");
-  if (!builder) return;
-  builder.innerHTML = `
-    <div class="section-title" style="margin-top:20px">Übungen auswählen</div>
-    <div id="manualExercisePickerList"></div>
-    <input id="manualWorkoutNameInput" class="name-input" style="margin-top:16px" placeholder="Workout-Name, z. B. Leg Day A" maxlength="30">
-    <div style="display:flex; gap:10px; margin-top:14px;">
-      <button id="saveManualWorkoutBtn" class="btn-main btn-lime" style="flex:1;">💾 Speichern</button>
-      <button id="cancelManualWorkoutBtn" class="btn-main btn-dark" style="flex:1;">Abbrechen</button>
-    </div>
-  `;
-  renderExercisePickerList(document.getElementById("manualExercisePickerList"));
-  document.getElementById("saveManualWorkoutBtn").addEventListener("click", async () => {
-    const name = document.getElementById("manualWorkoutNameInput").value.trim();
-    if (!name) { alert("Bitte einen Namen für das Workout eingeben."); return; }
-    if (manualSelectedExerciseIds.size === 0) { alert("Bitte mindestens eine Übung auswählen."); return; }
-    await saveCustomWorkout(trainingUser, name, [...manualSelectedExerciseIds]);
-    manualSelectedExerciseIds = new Set();
-    renderCustomWorkoutsSection();
-  });
-  document.getElementById("cancelManualWorkoutBtn").addEventListener("click", () => {
-    manualSelectedExerciseIds = new Set();
-    builder.innerHTML = "";
-  });
-}
-
 function computeRecommendation(last, ex) {
   const minReps = (last && last.minReps) || ex.defMin;
   const maxReps = (last && last.maxReps) || ex.defMax;
@@ -826,10 +679,9 @@ async function renderTrainingSetup() {
     </div>
 
     <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">Workout erstellen →</button>
-    <div id="customWorkoutsSection"></div>
   `;
 
-  document.getElementById("userNameInput").addEventListener("input", e => { trainingUser = e.target.value.trim(); localStorage.setItem("kg_user", trainingUser); refreshLastWorkoutBox(); renderCustomWorkoutsSection(); });
+  document.getElementById("userNameInput").addEventListener("input", e => { trainingUser = e.target.value.trim(); localStorage.setItem("kg_user", trainingUser); refreshLastWorkoutBox(); });
   document.querySelectorAll(".profile-chip").forEach(btn => {
     btn.addEventListener("click", () => {
       trainingUser = btn.dataset.user;
@@ -871,7 +723,6 @@ async function renderTrainingSetup() {
     renderUserHistory(trainingUser);
   });
   refreshLastWorkoutBox();
-  renderCustomWorkoutsSection();
 }
 
 async function refreshLastWorkoutBox() {
