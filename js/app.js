@@ -567,6 +567,38 @@ function levelsUpTo(level) {
 
 function exerciseOverrideRef(exId) { return ref(db, `gym/exerciseOverrides/${exId}`); }
 
+let customExercises = {}; // id -> exercise object from Firebase (custom: true)
+
+async function loadCustomExercises() {
+  try {
+    const snap = await get(ref(db, "gym/exerciseOverrides"));
+    const all = snap.val() || {};
+    customExercises = {};
+    Object.entries(all).forEach(([id, val]) => {
+      if (val && val.custom && val.body) {
+        customExercises[id] = {
+          id,
+          name: val.name,
+          body: val.body,
+          level: val.level || "easy",
+          defMin: val.defMin ?? 8,
+          defMax: val.defMax ?? 12,
+          equip: val.equip || ["custom"],
+          steps: val.steps || [],
+          note: val.note || null,
+          rackSetting: !!val.rackSetting,
+          rackLabel: val.rackLabel || null,
+          custom: true
+        };
+      }
+    });
+  } catch (err) {
+    customExercises = {};
+    showToast("Eigene Übungen konnten nicht geladen werden.", "error");
+  }
+  return customExercises;
+}
+
 async function getExerciseOverrides() {
   try {
     const snap = await get(ref(db, "gym/exerciseOverrides"));
@@ -588,9 +620,54 @@ async function saveExerciseOverride(exId, override) {
   }
 }
 
+async function saveCustomExercise(ex) {
+  try {
+    const payload = {
+      custom: true,
+      name: ex.name,
+      body: ex.body,
+      level: ex.level,
+      defMin: ex.defMin,
+      defMax: ex.defMax,
+      equip: ex.equip || ["custom"],
+      steps: ex.steps || [],
+      note: ex.note || null
+    };
+    await set(exerciseOverrideRef(ex.id), payload);
+    customExercises[ex.id] = { id: ex.id, ...payload };
+    showToast("Übung hinzugefügt.", "success", 2000);
+    return true;
+  } catch (err) {
+    showToast("Speichern fehlgeschlagen.", "error");
+    return false;
+  }
+}
+
+async function deleteCustomExercise(exId) {
+  try {
+    await remove(exerciseOverrideRef(exId));
+    delete customExercises[exId];
+    showToast("Übung gelöscht.", "success", 2000);
+    return true;
+  } catch (err) {
+    showToast("Löschen fehlgeschlagen.", "error");
+    return false;
+  }
+}
+
+function getAllExercises() {
+  const staticIds = new Set(EXERCISES.map(e => e.id));
+  const customs = Object.values(customExercises).filter(e => e && e.id && !staticIds.has(e.id));
+  return [...EXERCISES, ...customs];
+}
+
+function findExercise(id) {
+  return getAllExercises().find(e => e.id === id) || null;
+}
+
 function getExerciseDisplay(ex, overrides) {
   const o = overrides[ex.id] || {};
-  const baseInstr = EXERCISE_INSTRUCTIONS[ex.id] || { steps: [], note: null };
+  const baseInstr = EXERCISE_INSTRUCTIONS[ex.id] || { steps: ex.steps || [], note: ex.note || null };
   return {
     name: o.name || ex.name,
     steps: o.steps || baseInstr.steps || [],
@@ -598,17 +675,60 @@ function getExerciseDisplay(ex, overrides) {
   };
 }
 
-const BODY_ICONS = { beine: "🍑", bauch: "🧘", ruecken: "🫁", arme: "💪", brust: "🫇" };
+function slugifyExerciseId(name) {
+  const base = name.toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 36);
+  let id = base || ("custom" + Date.now());
+  const taken = new Set(getAllExercises().map(e => e.id));
+  if (!taken.has(id)) return id;
+  let n = 2;
+  while (taken.has(id + n)) n++;
+  return id + n;
+}
+
+function escapeAttr(s) {
+  return String(s || "").replace(/"/g, "&quot;");
+}
+
+const BODY_ICONS = { beine: "🍑", bauch: "🧘", ruecken: "🫁", arme: "💪", brust: "🫁" };
 const BODY_ORDER = ["beine", "bauch", "ruecken", "arme", "brust"];
+
+function renderAddExerciseForm(body) {
+  return `
+    <div class="owner-panel add-exercise-panel" style="margin-top:12px">
+      <div class="owner-title">Neue Übung · ${BODY_LABELS[body] || body}</div>
+      <input class="name-input" id="addName-${body}" placeholder="Name der Übung" maxlength="60">
+      <div class="field-label" style="margin-top:8px">Level</div>
+      <div class="chip-row" id="addLevel-${body}">
+        ${LEVEL_ORDER.map((k,i)=>`<button type="button" class="chip add-level-chip${i===0?" active":""}" data-body="${body}" data-level="${k}">${LEVEL_LABELS[k]}</button>`).join("")}
+      </div>
+      <textarea class="name-input" id="addSteps-${body}" rows="4" style="margin-top:8px; resize:vertical;" placeholder="Anleitung – ein Schritt pro Zeile"></textarea>
+      <input class="name-input" id="addNote-${body}" style="margin-top:8px;" placeholder="Hinweis (optional)" maxlength="200">
+      <div class="time-grid" style="margin-top:8px">
+        <div><div class="field-label">Min. Wdh</div><input type="number" class="time-input" id="addMin-${body}" value="8" min="1" max="50"></div>
+        <div><div class="field-label">Max. Wdh</div><input type="number" class="time-input" id="addMax-${body}" value="12" min="1" max="50"></div>
+      </div>
+      <button type="button" class="btn-main btn-owner save-new-exercise-btn" data-body="${body}">+ Übung speichern</button>
+    </div>`;
+}
 
 async function renderUebungenPage() {
   const wrap = document.getElementById("uebungenDynamicWrap");
   if (!wrap) return;
+  await loadCustomExercises();
   const overrides = await getExerciseOverrides();
   const groups = {};
-  EXERCISES.forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
+  BODY_ORDER.forEach(b => { groups[b] = []; });
+  getAllExercises().forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
 
-  wrap.innerHTML = BODY_ORDER.filter(b => groups[b]).map(body => `
+  const ownerBar = isOwner
+    ? `<div style="text-align:center;margin-bottom:14px"><button class="owner-link" id="uebungenOwnerLogout">Owner-Modus verlassen</button></div>`
+    : `<div style="text-align:center;margin-bottom:14px"><button class="owner-link" id="uebungenOwnerLogin">Owner-Modus (Übungen hinzufügen)</button></div>`;
+
+  wrap.innerHTML = ownerBar + BODY_ORDER.map(body => `
     <div class="faq-section">
       <button class="faq-section-btn">
         <span class="faq-section-icon">${BODY_ICONS[body] || "🏋️"}</span>
@@ -616,26 +736,44 @@ async function renderUebungenPage() {
         <span class="faq-section-chevron">▾</span>
       </button>
       <div class="faq-section-body"><div class="faq-section-inner">
-        ${groups[body].map(ex => {
+        ${(groups[body] || []).map(ex => {
           const d = getExerciseDisplay(ex, overrides);
+          const isCustom = !!customExercises[ex.id];
           return `
           <div class="faq-item" data-exid="${ex.id}">
-            <button class="faq-question">${d.name} <span class="faq-chevron">▾</span></button>
+            <button class="faq-question">${d.name}${isCustom ? ' <span class="detail-tag">eigen</span>' : ""} <span class="faq-chevron">▾</span></button>
             <div class="faq-answer"><div class="faq-answer-inner">
               <ul>
                 ${d.steps.map(s => `<li>${s}</li>`).join("")}
               </ul>
               ${d.note ? `<div class="faq-note">${d.note}</div>` : ""}
-              <div style="margin-top:10px">
+              ${isOwner ? `
+              <div style="margin-top:10px; display:flex; flex-direction:column; gap:8px;">
                 <button class="btn-main btn-dark edit-exercise-btn" data-exid="${ex.id}" style="width:100%">✏️ Info bearbeiten</button>
+                ${isCustom ? `<button class="btn-main btn-dark delete-custom-exercise-btn" data-exid="${ex.id}" style="width:100%">🗑 Übung löschen</button>` : ""}
               </div>
               <div class="exercise-edit-form" id="editForm-${ex.id}" style="display:none; margin-top:12px;"></div>
+              ` : ""}
             </div></div>
           </div>
-        `; }).join("")}
+        `; }).join("") || `<div class="info-box">Noch keine Übungen in dieser Zone.</div>`}
+        ${isOwner ? `
+          <button type="button" class="btn-main btn-owner toggle-add-exercise-btn" data-body="${body}" style="margin-top:10px">+ Übung hinzufügen</button>
+          <div id="addFormWrap-${body}" style="display:none">${renderAddExerciseForm(body)}</div>
+        ` : ""}
       </div></div>
     </div>
   `).join("");
+
+  document.getElementById("uebungenOwnerLogin")?.addEventListener("click", () => {
+    const pin = prompt("Owner PIN:");
+    if (pin === OWNER_PIN) { isOwner = true; renderUebungenPage(); }
+    else if (pin != null) alert("Falscher PIN.");
+  });
+  document.getElementById("uebungenOwnerLogout")?.addEventListener("click", () => {
+    isOwner = false;
+    renderUebungenPage();
+  });
 
   wrap.querySelectorAll(".faq-section-btn").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -653,20 +791,78 @@ async function renderUebungenPage() {
       if (!isOpen) item.classList.add("open");
     });
   });
+
+  wrap.querySelectorAll(".toggle-add-exercise-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const body = btn.dataset.body;
+      const formWrap = document.getElementById(`addFormWrap-${body}`);
+      const open = formWrap.style.display !== "none";
+      formWrap.style.display = open ? "none" : "block";
+      btn.textContent = open ? "+ Übung hinzufügen" : "Abbrechen";
+    });
+  });
+
+  wrap.querySelectorAll(".add-level-chip").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const body = btn.dataset.body;
+      document.querySelectorAll(`#addLevel-${body} .add-level-chip`).forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+
+  wrap.querySelectorAll(".save-new-exercise-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const body = btn.dataset.body;
+      const name = document.getElementById(`addName-${body}`).value.trim();
+      const stepsRaw = document.getElementById(`addSteps-${body}`).value;
+      const note = document.getElementById(`addNote-${body}`).value.trim();
+      const levelBtn = document.querySelector(`#addLevel-${body} .add-level-chip.active`);
+      const level = levelBtn?.dataset.level || "easy";
+      const defMin = parseInt(document.getElementById(`addMin-${body}`).value, 10) || 8;
+      const defMax = parseInt(document.getElementById(`addMax-${body}`).value, 10) || 12;
+      const steps = stepsRaw.split("\n").map(s => s.trim()).filter(Boolean);
+      if (!name) { alert("Bitte einen Namen angeben."); return; }
+      if (steps.length === 0) { alert("Bitte mindestens einen Anleitungsschritt angeben."); return; }
+      if (defMin > defMax) { alert("Min. Wiederholungen dürfen nicht größer als Max. sein."); return; }
+      const id = slugifyExerciseId(name);
+      const ex = {
+        id, name, body, level, defMin, defMax,
+        equip: ["custom"],
+        steps, note: note || null,
+        custom: true
+      };
+      const ok = await saveCustomExercise(ex);
+      if (ok) renderUebungenPage();
+    });
+  });
+
+  wrap.querySelectorAll(".delete-custom-exercise-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("Diese Übung wirklich löschen?")) return;
+      const ok = await deleteCustomExercise(btn.dataset.exid);
+      if (ok) renderUebungenPage();
+    });
+  });
+
   wrap.querySelectorAll(".edit-exercise-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       const exId = btn.dataset.exid;
-      const ex = EXERCISES.find(x => x.id === exId);
+      const ex = findExercise(exId);
+      if (!ex) return;
       const d = getExerciseDisplay(ex, overrides);
       const form = document.getElementById(`editForm-${exId}`);
       const isOpen = form.style.display !== "none";
       if (isOpen) { form.style.display = "none"; form.innerHTML = ""; return; }
       form.style.display = "block";
       form.innerHTML = `
-        <input class="name-input" id="editName-${exId}" placeholder="Name" value="${d.name.replace(/"/g,'&quot;')}">
+        <input class="name-input" id="editName-${exId}" placeholder="Name" value="${escapeAttr(d.name)}">
         <textarea class="name-input" id="editSteps-${exId}" rows="5" style="margin-top:8px; resize:vertical;" placeholder="Ein Schritt pro Zeile">${d.steps.join("\n")}</textarea>
-        <input class="name-input" id="editNote-${exId}" style="margin-top:8px;" placeholder="Hinweis (optional)" value="${(d.note||"").replace(/"/g,'&quot;')}">
+        <input class="name-input" id="editNote-${exId}" style="margin-top:8px;" placeholder="Hinweis (optional)" value="${escapeAttr(d.note || "")}">
         <button class="btn-main btn-lime save-exercise-edit-btn" data-exid="${exId}" style="width:100%; margin-top:10px;">💾 Speichern</button>
       `;
       form.querySelector(".save-exercise-edit-btn").addEventListener("click", async () => {
@@ -675,7 +871,12 @@ async function renderUebungenPage() {
         const note = document.getElementById(`editNote-${exId}`).value.trim();
         const steps = stepsRaw.split("\n").map(s => s.trim()).filter(Boolean);
         if (!name || steps.length === 0) { alert("Bitte Name und mindestens einen Schritt angeben."); return; }
-        await saveExerciseOverride(exId, { name, steps, note: note || null });
+        if (customExercises[exId]) {
+          const updated = { ...customExercises[exId], name, steps, note: note || null };
+          await saveCustomExercise(updated);
+        } else {
+          await saveExerciseOverride(exId, { name, steps, note: note || null });
+        }
         renderUebungenPage();
       });
     });
@@ -708,8 +909,9 @@ function exercisesPerDuration(min) {
 
 function buildWorkout() {
   const allowedLevels = levelsUpTo(selectedLevel || "advanced");
-  let pool = EXERCISES.filter(e => selectedBody.has(e.body) && allowedLevels.includes(e.level));
-  if (pool.length === 0) pool = EXERCISES.filter(e => allowedLevels.includes(e.level));
+  const all = getAllExercises();
+  let pool = all.filter(e => selectedBody.has(e.body) && allowedLevels.includes(e.level));
+  if (pool.length === 0) pool = all.filter(e => allowedLevels.includes(e.level));
   const count = Math.min(exercisesPerDuration(selectedDuration), pool.length || 1);
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const byBody = {};
@@ -841,7 +1043,7 @@ async function deleteCustomWorkout(user, id) {
 
 function renderExercisePickerList(container) {
   const groups = {};
-  EXERCISES.forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
+  getAllExercises().forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
   container.innerHTML = Object.entries(groups).map(([body, list]) => `
     <div class="section-title" style="margin-top:16px; font-size:0.95em;">${BODY_LABELS[body] || body}</div>
     ${list.map(e => `
@@ -874,7 +1076,7 @@ async function renderCustomWorkoutsSection() {
         <button class="faq-question">${w.name} <span style="opacity:0.6; font-size:0.85em">(${(w.exerciseIds || []).length} Übungen)</span> <span class="faq-chevron">▾</span></button>
         <div class="faq-answer"><div class="faq-answer-inner">
           <ul>
-            ${(w.exerciseIds || []).map(id => { const ex = EXERCISES.find(e => e.id === id); return `<li>${ex ? ex.name : id}</li>`; }).join("")}
+            ${(w.exerciseIds || []).map(id => { const ex = findExercise(id); return `<li>${ex ? ex.name : id}</li>`; }).join("")}
           </ul>
           <div style="display:flex; gap:10px; margin-top:10px;">
             <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">▶️ Starten</button>
@@ -895,7 +1097,7 @@ async function renderCustomWorkoutsSection() {
       e.stopPropagation();
       const w = saved.find(x => x.id === btn.dataset.workoutid);
       if (!w) return;
-      currentWorkoutQueue = (w.exerciseIds || []).map(id => EXERCISES.find(ex => ex.id === id)).filter(Boolean);
+      currentWorkoutQueue = (w.exerciseIds || []).map(id => findExercise(id)).filter(Boolean);
       if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
       currentExerciseIdx = 0;
       completedBodies = new Set();
@@ -994,6 +1196,7 @@ function computeRecommendation(last, ex) {
 
 async function renderTrainingSetup() {
   const wrap = document.getElementById("trainingContent");
+  await loadCustomExercises();
   const allUsers = await getAllUsers();
   const profileChipsHTML = allUsers.length
     ? `<div class="chip-row" style="margin-bottom:10px">${allUsers.map(u=>`<button class="chip profile-chip${u===trainingUser?" active":""}" data-user="${u}">${u}</button>`).join("")}</div>`
@@ -1082,7 +1285,7 @@ async function refreshLastWorkoutBox() {
   box.innerHTML = `<div class="info-box" style="margin-top:12px">Letztes Workout (${dateStr}, ${lw.duration} Min, ${lw.exerciseIds.length} Übungen).
     <button id="repeatWorkoutBtn" class="btn-main btn-dark" style="margin-top:10px">🔁 Gleiches Workout wiederholen</button></div>`;
   document.getElementById("repeatWorkoutBtn").addEventListener("click", () => {
-    currentWorkoutQueue = lw.exerciseIds.map(id => EXERCISES.find(e=>e.id===id)).filter(Boolean);
+    currentWorkoutQueue = lw.exerciseIds.map(id => findExercise(id)).filter(Boolean);
     if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
     currentExerciseIdx = 0;
     renderTrainingExercise();
@@ -1369,14 +1572,14 @@ async function renderTrainingExercise() {
     return;
   }
   const ex = currentWorkoutQueue[currentExerciseIdx];
-  const instr = EXERCISE_INSTRUCTIONS[ex.id];
-  const instrHTML = instr ? `
+  const display = getExerciseDisplay(ex, {});
+  const instrHTML = display.steps.length ? `
       <button id="toggleInstrBtn" class="btn-main btn-dark" style="margin-top:10px;margin-bottom:0">📋 Anleitung anzeigen</button>
       <div id="instrBox" style="display:none;margin-top:10px;padding:12px;background:#0d0d0d;border-radius:8px">
         <ul style="margin:0;padding-left:18px;color:#ddd;line-height:1.6">
-          ${instr.steps.map(s => `<li>${s}</li>`).join("")}
+          ${display.steps.map(s => `<li>${s}</li>`).join("")}
         </ul>
-        ${instr.note ? `<div class="faq-note" style="margin-top:8px;color:#f5c542">${instr.note}</div>` : ""}
+        ${display.note ? `<div class="faq-note" style="margin-top:8px;color:#f5c542">${display.note}</div>` : ""}
       </div>` : "";
   const rackFieldHTML = ex.rackSetting ? `
       <div style="margin-top:12px">
@@ -1385,7 +1588,7 @@ async function renderTrainingExercise() {
       </div>` : "";
   wrap.innerHTML = `<div class="section-title">Übung ${currentExerciseIdx+1}/${currentWorkoutQueue.length}</div>
     <div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${ex.name}</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${display.name}</div>
       <div class="sub" id="recoNote" style="color:#999;margin-bottom:14px">Lade letzten Wert…</div>
       <div class="field-label" style="margin-bottom:6px">Sätze</div>
       <div id="setsList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
@@ -1595,6 +1798,7 @@ onValue(statusRef, snap => { currentStatus = snap.val(); renderAll(); });
 onValue(scheduleRef, snap => { currentSchedule = snap.val() || {}; renderAll(); if (activeTab==="reserve") renderReservePage(); });
 setInterval(renderAll, 60000);
 
+loadCustomExercises();
 initFaqListeners();
 initNav();
 initTheme();
