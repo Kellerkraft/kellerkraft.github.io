@@ -1,0 +1,22 @@
+{
+  "name": "Kellerkraft Gym",
+  "short_name": "Keller Gym",
+  "start_url": "../",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "./icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./manifest-icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

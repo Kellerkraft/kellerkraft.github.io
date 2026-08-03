@@ -172,6 +172,16 @@ let isOwner = false;
 let activeTab = "home";
 let weekOffset = 0;
 let selectedDayDetail = null;
+let trainingUser = localStorage.getItem("kg_user") || "";
+let pendingWorkoutStart = false;
+let checkedInAs = "";
+
+function checkinToTrainingDuration(min) {
+  if (min >= 60) return 60;
+  if (min >= 45) return 45;
+  if (min >= 30) return 30;
+  return 15;
+}
 
 function fmt(h, m) { return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`; }
 function localDateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
@@ -297,7 +307,11 @@ function renderWeekOverview() {
       </div>
       <span class="week-legend-spacer"></span>
     </div>
-    <div class="week-list">${rows}</div>`;
+    <div class="week-list">${rows}</div>
+    <div class="week-color-key">
+      <span><span class="week-color-key-swatch free"></span>Frei</span>
+      <span><span class="week-color-key-swatch busy"></span>Reserviert</span>
+    </div>`;
 
   document.getElementById("weekPrev")?.addEventListener("click", () => { weekOffset--; renderWeekOverview(); });
   document.getElementById("weekNext")?.addEventListener("click", () => { weekOffset++; renderWeekOverview(); });
@@ -365,7 +379,7 @@ function renderAll() {
 
   let formHTML = "";
   if (!effectivelyBusy) {
-    formHTML = `<input id="nameInput" class="name-input" placeholder="Dein Name (optional)" maxlength="20">
+    formHTML = `<input id="nameInput" class="name-input" placeholder="Dein Name (optional)" maxlength="20" value="${trainingUser.replace(/"/g, "&quot;")}">
       <div class="dur-row">
         <button class="btn-dur active" data-min="30">30 min</button>
         <button class="btn-dur" data-min="45">45 min</button>
@@ -375,7 +389,20 @@ function renderAll() {
       <button id="checkinBtn" class="btn-main btn-lime">Ich bin drin →</button>`;
   } else if (!isFreeCheckin) {
     formHTML = `<button id="checkoutBtn" class="btn-main btn-dark">Fertig – Gym freigeben</button>`;
+    if (pendingWorkoutStart && currentStatus.name === checkedInAs) {
+      formHTML += `<button id="startWorkoutBtn" class="btn-main btn-lime" style="margin-top:10px">Workout starten →</button>`;
+    }
   }
+
+  if (isFreeCheckin) {
+    pendingWorkoutStart = false;
+    checkedInAs = "";
+  }
+
+  formHTML += `<div class="home-quick-nav">
+      <button type="button" class="home-quick-btn" data-goto="training">Training</button>
+      <button type="button" class="home-quick-btn" data-goto="ausstattung">Ausstattung</button>
+    </div>`;
 
   document.getElementById("form").innerHTML = formHTML;
 
@@ -406,10 +433,29 @@ function attachHomeListeners() {
     });
   });
   document.getElementById("checkinBtn")?.addEventListener("click", () => {
-    const name = document.getElementById("nameInput").value.trim() || "Jemand";
+    const raw = document.getElementById("nameInput").value.trim();
+    if (raw) {
+      trainingUser = raw;
+      localStorage.setItem("kg_user", raw);
+    }
+    const name = raw || "Jemand";
+    checkedInAs = name;
+    pendingWorkoutStart = true;
+    selectedDuration = checkinToTrainingDuration(selectedMin);
     set(statusRef, { until: Date.now() + selectedMin * 60000, name, duration: selectedMin });
   });
-  document.getElementById("checkoutBtn")?.addEventListener("click", () => remove(statusRef));
+  document.getElementById("startWorkoutBtn")?.addEventListener("click", () => {
+    pendingWorkoutStart = false;
+    switchTab("training");
+  });
+  document.getElementById("checkoutBtn")?.addEventListener("click", () => {
+    pendingWorkoutStart = false;
+    checkedInAs = "";
+    remove(statusRef);
+  });
+  document.querySelectorAll(".home-quick-btn").forEach(btn => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.goto));
+  });
   document.querySelectorAll(".del-btn").forEach(btn => {
     btn.addEventListener("click", () => remove(ref(db, "gym/schedule/" + btn.dataset.id)));
   });
@@ -440,9 +486,7 @@ function renderReservePage() {
 
   let allBlocksHTML = "";
   const entries = Object.entries(currentSchedule);
-  if (entries.length === 0) {
-    allBlocksHTML = `<div class="info-box">Noch keine Termine geplant.</div>`;
-  } else {
+  if (entries.length > 0) {
     const sorted = entries.sort((a,b) => {
       const av = a[1].recurring ? a[1].day*1440+a[1].startH*60+a[1].startM : new Date(a[1].date).getTime()/60000 + a[1].startH*60+a[1].startM;
       const bv = b[1].recurring ? b[1].day*1440+b[1].startH*60+b[1].startM : new Date(b[1].date).getTime()/60000 + b[1].startH*60+b[1].startM;
@@ -458,14 +502,16 @@ function renderReservePage() {
 
   const dbOverviewPlaceholder = isOwner ? `<div class="section-title" style="margin-top:20px">🗄️ Datenbank-Übersicht (Owner)</div><div id="dbOverviewBox" class="info-box">Lade…</div>` : "";
 
-  wrap.innerHTML = `
-    <div class="section-title">Terminübersicht</div>
-    ${allBlocksHTML}
-    <div class="section-title" style="margin-top:20px">Vorab reservieren</div>
+  const formSection = `
+    <div class="section-title"${entries.length === 0 ? "" : ' style="margin-top:20px"'}>Vorab reservieren</div>
     ${panelHTML}
     <div style="text-align:center;margin-top:16px">${ownerLinkHTML}</div>
-    ${dbOverviewPlaceholder}
   `;
+
+  // Empty: form first so first booking isn't buried under an empty list
+  wrap.innerHTML = entries.length === 0
+    ? `${formSection}${dbOverviewPlaceholder}`
+    : `<div class="section-title">Terminübersicht</div>${allBlocksHTML}${formSection}${dbOverviewPlaceholder}`;
 
   if (isOwner) renderDbOverview();
 
@@ -636,7 +682,6 @@ async function renderUebungenPage() {
   });
 }
 
-let trainingUser = localStorage.getItem("kg_user") || "";
 let selectedBody = new Set();
 let selectedLevel = null;
 let selectedDuration = 30;
@@ -1506,7 +1551,7 @@ function switchTab(tab) {
   document.getElementById("navLabel").textContent = NAV_LABELS[tab];
   window.scrollTo(0,0);
   if (tab === "reserve") renderReservePage();
-  if (tab === "home") renderWeekOverview();
+  if (tab === "home") renderAll();
   if (tab === "training") renderTrainingSetup();
   if (tab === "uebungen") renderUebungenPage();
 }
