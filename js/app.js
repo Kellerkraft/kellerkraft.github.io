@@ -228,6 +228,14 @@ function getScheduleInfo() {
 
 function blockLabel(b) { return b.label || "Reserviert"; }
 function blockTimeStr(b) { return `${fmt(b.startH,b.startM)} – ${fmt(b.endH,b.endM)} Uhr`; }
+function isScheduleEntryPast(b) {
+  // Weekly recurring slots stay visible; only one-off past dates are hidden
+  if (b.recurring) return false;
+  if (!b.date) return false;
+  const end = new Date(b.date + "T00:00:00");
+  end.setHours(b.endH || 0, b.endM || 0, 0, 0);
+  return end.getTime() <= Date.now();
+}
 function blockWhenStr(b) {
   if (b.sameDay) { const h=Math.floor(b.minsUntil/60),m=b.minsUntil%60; return h===0?`in ${m} min`:m===0?`in ${h} Std`:`in ${h} Std ${m} min`; }
   const d = b.daysUntil||b.diffDays;
@@ -485,7 +493,7 @@ function renderReservePage() {
     </div>`;
 
   let allBlocksHTML = "";
-  const entries = Object.entries(currentSchedule);
+  const entries = Object.entries(currentSchedule).filter(([, b]) => !isScheduleEntryPast(b));
   if (entries.length > 0) {
     const sorted = entries.sort((a,b) => {
       const av = a[1].recurring ? a[1].day*1440+a[1].startH*60+a[1].startM : new Date(a[1].date).getTime()/60000 + a[1].startH*60+a[1].startM;
