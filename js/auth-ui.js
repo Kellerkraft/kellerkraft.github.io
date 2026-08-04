@@ -1,14 +1,13 @@
 /**
- * Auth account panel UI — email magic link (+ guest).
+ * Auth account panel UI — email/password (+ guest).
  */
 import {
   getAuthSnapshot,
   onAuthChange,
-  sendEmailSignInLink,
-  signOutToGuest,
-  isEmailSignInLink,
-  resolveEmailForSignInLink,
-  completeEmailLinkSignIn
+  registerWithEmailPassword,
+  signInWithEmailPassword,
+  resetPassword,
+  signOutToGuest
 } from "./auth.js";
 import { trackEvent, trackError } from "./telemetry.js";
 
@@ -23,7 +22,7 @@ export function initAuthPanel(deps) {
   const mount = document.getElementById("authPanel");
   if (!mount) return () => {};
 
-  let completingLink = false;
+  let busy = false;
 
   function render(snap) {
     const permanent = snap.isPermanent;
@@ -31,9 +30,6 @@ export function initAuthPanel(deps) {
     const label = permanent
       ? (snap.email || "Konto")
       : "Gast (anonym)";
-
-    const pendingLink = !permanent && isEmailSignInLink();
-    const prefillEmail = pendingLink ? resolveEmailForSignInLink() : "";
 
     mount.innerHTML = `
       <div class="auth-card">
@@ -45,47 +41,81 @@ export function initAuthPanel(deps) {
         ${permanent ? `
           <div class="sub auth-hint">Dein Konto ist mit dem Trainingsprofil verknüpft — gleicher Name für Logs, Streaks und Auszeichnung.</div>
           <button type="button" class="btn-main btn-dark" id="authSignOutBtn">Abmelden (weiter als Gast)</button>
-        ` : pendingLink ? `
-          <div class="field-label">Anmelde-Link erkannt</div>
-          <div class="sub auth-hint">Falls nötig, dieselbe E-Mail bestätigen — bei neuen Links ist sie schon im Link enthalten.</div>
-          <input id="authEmailConfirmInput" class="name-input" type="email" placeholder="name@example.com" value="${escapeAttr(prefillEmail)}" autocomplete="email">
-          <button type="button" class="btn-main btn-lime" id="authCompleteLinkBtn">Anmeldung abschließen</button>
         ` : `
-          <div class="field-label">Konto sichern (E-Mail-Link)</div>
-          <input id="authEmailInput" class="name-input" type="email" placeholder="name@example.com" autocomplete="email">
-          <button type="button" class="btn-main btn-lime" id="authEmailBtn">Link senden</button>
-          <div class="sub auth-hint">Link in der Mail öffnen (dieser Browser). Danach bist du angemeldet — ohne Passwort, ohne Extra-Eingabe.</div>
+          <div class="field-label">Konto (E-Mail + Passwort)</div>
+          <form id="authForm" autocomplete="on">
+            <input id="authEmailInput" class="name-input" type="email" name="username" placeholder="name@example.com" autocomplete="username" required>
+            <input id="authPasswordInput" class="name-input" type="password" name="password" placeholder="Passwort (min. 6 Zeichen)" autocomplete="current-password" required minlength="6" style="margin-top:8px">
+            <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+              <button type="submit" class="btn-main btn-lime" id="authSignInBtn" style="flex:1;min-width:120px">Anmelden</button>
+              <button type="button" class="btn-main btn-dark" id="authRegisterBtn" style="flex:1;min-width:120px">Registrieren</button>
+            </div>
+          </form>
+          <button type="button" class="owner-link" id="authResetBtn" style="margin-top:10px">Passwort vergessen / setzen</button>
+          <div class="sub auth-hint">Zugangsdaten im Passwort-Manager speichern. Bleibt in diesem Browser angemeldet.</div>
         `}
       </div>
     `;
 
-    document.getElementById("authEmailBtn")?.addEventListener("click", async () => {
+    const form = document.getElementById("authForm");
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (busy) return;
+      busy = true;
       const email = document.getElementById("authEmailInput")?.value || "";
+      const password = document.getElementById("authPasswordInput")?.value || "";
       try {
-        await sendEmailSignInLink(email);
-        deps.showToast("Link gesendet — in der Mail den Link antippen (dieser Browser).", "success", 5500);
-        trackEvent("ui_email_link_sent");
-      } catch (err) {
-        trackError(err, { source: "auth_ui.email" });
-        deps.showToast(err?.message || "E-Mail-Link fehlgeschlagen.", "error", 5500);
-      }
-    });
-
-    document.getElementById("authCompleteLinkBtn")?.addEventListener("click", async () => {
-      if (completingLink) return;
-      completingLink = true;
-      const email = document.getElementById("authEmailConfirmInput")?.value || "";
-      try {
-        const linked = await completeEmailLinkSignIn(window.location.href, email);
+        const linked = await signInWithEmailPassword(email, password);
         if (linked?.isPermanent) {
           deps.showToast("Angemeldet.", "success");
           await deps.onLinked?.(linked);
+          trackEvent("ui_password_signed_in");
         }
       } catch (err) {
-        trackError(err, { source: "auth_ui.complete_link" });
-        deps.showToast(err?.message || "Link-Anmeldung fehlgeschlagen.", "error", 5500);
+        trackError(err, { source: "auth_ui.sign_in" });
+        deps.showToast(err?.message || "Anmeldung fehlgeschlagen.", "error", 5500);
       } finally {
-        completingLink = false;
+        busy = false;
+      }
+    });
+
+    document.getElementById("authRegisterBtn")?.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
+      const email = document.getElementById("authEmailInput")?.value || "";
+      const password = document.getElementById("authPasswordInput")?.value || "";
+      try {
+        const linked = await registerWithEmailPassword(email, password);
+        if (linked?.isPermanent) {
+          deps.showToast("Konto erstellt — angemeldet.", "success");
+          await deps.onLinked?.(linked);
+          trackEvent("ui_password_registered");
+        }
+      } catch (err) {
+        trackError(err, { source: "auth_ui.register" });
+        deps.showToast(err?.message || "Registrierung fehlgeschlagen.", "error", 5500);
+      } finally {
+        busy = false;
+      }
+    });
+
+    document.getElementById("authResetBtn")?.addEventListener("click", async () => {
+      if (busy) return;
+      const email = document.getElementById("authEmailInput")?.value || "";
+      if (!email.trim()) {
+        deps.showToast("Bitte zuerst E-Mail eintragen.", "info", 3500);
+        return;
+      }
+      busy = true;
+      try {
+        await resetPassword(email);
+        deps.showToast("Reset-Mail gesendet — Link öffnen und Passwort setzen.", "success", 5500);
+        trackEvent("ui_password_reset");
+      } catch (err) {
+        trackError(err, { source: "auth_ui.reset" });
+        deps.showToast(err?.message || "Reset fehlgeschlagen.", "error", 5500);
+      } finally {
+        busy = false;
       }
     });
 
@@ -112,8 +142,4 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
-}
-
-function escapeAttr(s) {
-  return String(s || "").replace(/"/g, "&quot;");
 }

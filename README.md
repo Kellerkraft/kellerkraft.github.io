@@ -4,7 +4,7 @@ Single-Page-Trainings-App (PWA) fuer das Home-Gym im Keller, mit Firebase Realti
 
 ## Phase 1 (Foundation)
 
-- **Echte Konten:** anonymer Gast + E-Mail-Magic-Link; Check-in ohne Login, Training nur angemeldet (Logs unter UID)
+- **Echte Konten:** anonymer Gast + E-Mail/Passwort; Check-in ohne Login, Training nur angemeldet (Logs unter UID)
 - **Datenmodell v2:** `gym/users`, `gym/plans`, `gym/events`, `gym/roles`, … — siehe `docs/data-model-v2.md` und `js/data-model.js`
 - **Services:** `js/services/*` (Profil, Plaene, Feed, Logs/Streaks, Schema, Rollen)
 - **Telemetrie:** lokales Event-/Error-Tracking (`js/telemetry.js`, Debug: `window.__kgTelemetry`)
@@ -14,7 +14,7 @@ Single-Page-Trainings-App (PWA) fuer das Home-Gym im Keller, mit Firebase Realti
 
 Nach Schema-/Auth-Aenderungen die Realtime-Database-Rules aus `database.rules.json` in der Firebase Console (oder via CLI) veroeffentlichen. Ohne Deploy greifen Profile/Plaene/Feed ggf. nicht remote (lokaler Fallback bleibt).
 
-In Firebase Auth: **Anonymous** + **E-Mail-Link**. Für Owner-Übersicht aller Trainingsdaten zusätzlich `gym/roles/{deineUid} = "owner"` setzen und `database.rules.json` deployen.
+In Firebase Auth: **Anonymous** + **E-Mail/Passwort** (Passwort-Anbieter, nicht nur Magic Link). Für Owner-Übersicht aller Trainingsdaten zusätzlich `gym/roles/{deineUid} = "owner"` setzen und `database.rules.json` deployen.
 
 ## Projektstruktur
 

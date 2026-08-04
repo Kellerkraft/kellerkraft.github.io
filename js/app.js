@@ -4,7 +4,7 @@
  */
 import { ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { db } from "./firebase.js";
-import { ensureAuth, watchAuth, onAuthChange, completeEmailLinkSignIn, getAuthSnapshot } from "./auth.js";
+import { ensureAuth, watchAuth, onAuthChange, getAuthSnapshot } from "./auth.js";
 import { initAuthPanel } from "./auth-ui.js";
 import { initTelemetry, trackEvent, trackError, exposeTelemetryGlobal } from "./telemetry.js";
 import { ensureSchemaVersion } from "./services/schema.js";
@@ -257,7 +257,7 @@ function attachHomeListeners() {
     pendingWorkoutStart = false;
     const snap = getAuthSnapshot();
     if (!snap.isPermanent) {
-      showToast("Zum Trainieren bitte zuerst per E-Mail-Link anmelden.", "info", 4500);
+      showToast("Zum Trainieren bitte zuerst mit E-Mail und Passwort anmelden.", "info", 4500);
       return;
     }
     switchTab("training");
@@ -368,21 +368,6 @@ async function boot() {
 
   try {
     await ensureAuth();
-
-    try {
-      const linked = await completeEmailLinkSignIn();
-      if (linked?.isPermanent) {
-        await syncProfileToTrainingUser(linked.uid, trainingUser, applyTrainingUser);
-        showToast("Konto verknüpft — Trainingsprofil geladen.", "success", 4000);
-      }
-    } catch (err) {
-      trackError(err, { source: "boot.email_link" });
-      if (err?.code === "auth/email-required-for-link") {
-        showToast("Anmelde-Link erkannt — bitte E-Mail im Konto-Feld bestätigen.", "info", 5000);
-      } else {
-        showToast(err?.message || "E-Mail-Link Anmeldung fehlgeschlagen.", "error", 5000);
-      }
-    }
 
     watchAuth();
     onAuthChange(async (authSnap) => {
