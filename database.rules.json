@@ -1,0 +1,371 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "gym": {
+      "meta": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('gym/roles').child(auth.uid).val() === 'owner'",
+        "schemaVersion": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 99"
+        }
+      },
+
+      "roles": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && root.child('gym/roles').child(auth.uid).val() === 'owner'",
+          ".validate": "newData.isString() && (newData.val() === 'owner' || newData.val() === 'coach' || newData.val() === 'member')"
+        }
+      },
+
+      "users": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && (auth.uid === $uid || root.child('gym/roles').child(auth.uid).val() === 'owner' || root.child('gym/roles').child(auth.uid).val() === 'coach')",
+          ".validate": "newData.hasChildren(['displayName', 'createdAt', 'updatedAt'])",
+          "displayName": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+          },
+          "avatar": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "goal": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "favoriteBodies": {
+            ".validate": "newData.hasChildren() || newData.val() === null",
+            "$i": {
+              ".validate": "newData.isString() && newData.val().length <= 32"
+            }
+          },
+          "weekGoal": {
+            ".validate": "newData.val() === null || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 7)"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+
+      "plans": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('gym/roles').child(auth.uid).val() === 'owner' || root.child('gym/roles').child(auth.uid).val() === 'coach')",
+          ".write": "auth != null && (auth.uid === $uid || root.child('gym/roles').child(auth.uid).val() === 'owner' || root.child('gym/roles').child(auth.uid).val() === 'coach')",
+          "$planId": {
+            ".validate": "newData.hasChildren(['name', 'exerciseIds', 'createdAt', 'updatedAt'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+            },
+            "exerciseIds": {
+              ".validate": "newData.hasChildren()",
+              "$i": {
+                ".validate": "newData.isString() && newData.val().length <= 64"
+              }
+            },
+            "days": {
+              ".validate": "newData.hasChildren() || newData.val() === null",
+              "$i": {
+                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6"
+              }
+            },
+            "blocks": {
+              ".validate": "newData.hasChildren() || newData.val() === null"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "updatedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
+
+      "workouts": {
+        "$uid": {
+          ".read": "auth != null && (auth.uid === $uid || root.child('gym/roles').child(auth.uid).val() === 'owner' || root.child('gym/roles').child(auth.uid).val() === 'coach')",
+          ".write": "auth != null && (auth.uid === $uid || root.child('gym/roles').child(auth.uid).val() === 'owner')",
+          "templates": {
+            "$workoutId": {
+              ".validate": "newData.hasChildren(['name', 'exerciseIds', 'createdAt'])",
+              "name": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 60"
+              },
+              "exerciseIds": {
+                ".validate": "newData.hasChildren()",
+                "$i": {
+                  ".validate": "newData.isString() && newData.val().length <= 64"
+                }
+              },
+              "createdAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          },
+          "last": {
+            ".validate": "newData.hasChildren(['date', 'exerciseIds'])",
+            "date": {
+              ".validate": "newData.isNumber()"
+            },
+            "duration": {
+              ".validate": "newData.isNumber()"
+            },
+            "body": {
+              ".validate": "newData.hasChildren() || newData.val() === null"
+            },
+            "level": {
+              ".validate": "newData.isString() && newData.val().length <= 32"
+            },
+            "exerciseIds": {
+              ".validate": "newData.hasChildren()",
+              "$i": {
+                ".validate": "newData.isString() && newData.val().length <= 64"
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
+
+      "logs": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null",
+          "$exerciseId": {
+            "$logId": {
+              ".validate": "newData.hasChildren(['weight', 'reps', 'date'])",
+              "weight": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "reps": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "minReps": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "maxReps": {
+                ".validate": "newData.isNumber() && newData.val() >= 0"
+              },
+              "rir": {
+                ".validate": "newData.val() === null || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 10)"
+              },
+              "date": {
+                ".validate": "newData.isNumber()"
+              },
+              "exerciseName": {
+                ".validate": "newData.isString() && newData.val().length <= 80"
+              },
+              "sets": {
+                ".validate": "newData.hasChildren() || newData.val() === null",
+                "$i": {
+                  ".validate": "newData.hasChildren(['weight', 'reps'])",
+                  "weight": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0"
+                  },
+                  "reps": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0"
+                  },
+                  "rir": {
+                    ".validate": "newData.val() === null || (newData.isNumber() && newData.val() >= 0 && newData.val() <= 10)"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "rackSetting": {
+                ".validate": "newData.val() === null || newData.isNumber()"
+              },
+              "rackLabel": {
+                ".validate": "newData.isString() && newData.val().length <= 40"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        }
+      },
+
+      "reservations": {
+        ".read": "auth != null",
+        "$id": {
+          ".write": "auth != null && (!data.exists() || !data.child('uid').exists() || data.child('uid').val() === auth.uid || root.child('gym/roles').child(auth.uid).val() === 'owner' || root.child('gym/roles').child(auth.uid).val() === 'coach')",
+          ".validate": "newData.hasChildren(['label', 'startH', 'startM', 'endH', 'endM', 'recurring'])",
+          "label": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+          },
+          "uid": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "startH": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 23"
+          },
+          "startM": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 59"
+          },
+          "endH": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 23"
+          },
+          "endM": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 59"
+          },
+          "recurring": {
+            ".validate": "newData.isBoolean()"
+          },
+          "day": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6"
+          },
+          "date": {
+            ".validate": "newData.isString() && newData.val().matches(/^\\d{4}-\\d{2}-\\d{2}$/)"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+
+      "status": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".validate": "!newData.exists() || newData.hasChildren(['until', 'name', 'duration'])",
+        "until": {
+          ".validate": "newData.isNumber()"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+        },
+        "uid": {
+          ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "duration": {
+          ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 480"
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+
+      "exercises": {
+        ".read": "auth != null",
+        "$exerciseId": {
+          ".write": "auth != null && (root.child('gym/roles').child(auth.uid).val() === 'owner' || (root.child('gym/roles').child(auth.uid).val() === 'coach' && (!data.exists() || newData.exists())))",
+          ".validate": "newData.hasChildren(['name'])",
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+          },
+          "custom": {
+            ".validate": "newData.isBoolean()"
+          },
+          "steps": {
+            ".validate": "newData.hasChildren() || newData.val() === null"
+          },
+          "note": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          },
+          "media": {
+            ".validate": "newData.val() === null || newData.hasChildren(['type', 'url'])"
+          },
+          "body": {
+            ".validate": "newData.isString() && newData.val().length <= 32"
+          },
+          "level": {
+            ".validate": "newData.isString() && newData.val().length <= 32"
+          },
+          "defMin": {
+            ".validate": "newData.isNumber()"
+          },
+          "defMax": {
+            ".validate": "newData.isNumber()"
+          },
+          "equip": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "rackSetting": {
+            ".validate": "newData.val() === null || newData.isNumber()"
+          },
+          "rackLabel": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+
+      "events": {
+        ".read": "auth != null",
+        "$eventId": {
+          ".write": "auth != null && (!data.exists() || root.child('gym/roles').child(auth.uid).val() === 'owner' || (data.child('uid').val() === auth.uid))",
+          ".validate": "newData.hasChildren(['type', 'text', 'ts'])",
+          "type": {
+            ".validate": "newData.isString() && (newData.val() === 'workout' || newData.val() === 'pr' || newData.val() === 'streak' || newData.val() === 'plan')"
+          },
+          "text": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 280"
+          },
+          "uid": {
+            ".validate": "newData.val() === null || (newData.isString() && newData.val().length <= 128)"
+          },
+          "user": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "ts": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+
+      "schedule": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "$id": {
+          ".validate": "newData.hasChildren(['label', 'startH', 'startM', 'endH', 'endM', 'recurring'])"
+        }
+      },
+
+      "lastWorkout": {
+        ".read": "auth != null",
+        "$userName": {
+          ".write": "auth != null"
+        }
+      },
+
+      "customWorkouts": {
+        ".read": "auth != null",
+        "$safeName": {
+          ".write": "auth != null"
+        }
+      },
+
+      "exerciseOverrides": {
+        ".read": "auth != null",
+        "$exerciseId": {
+          ".write": "auth != null"
+        }
+      }
+    }
+  }
+}

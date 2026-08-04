@@ -31,6 +31,7 @@ const scheduleRef = ref(db, "gym/schedule");
 function showToast(message, type = "info", duration = 3500) {
   const wrap = document.getElementById("toastWrap");
   if (!wrap) return;
+  window.__lastToast = { message, type, ts: Date.now() };
   const el = document.createElement("div");
   el.className = `toast ${type === "error" ? "error" : type === "success" ? "success" : ""}`;
   el.textContent = message;
@@ -169,12 +170,18 @@ const DAYS_SHORT = ["So","Mo","Di","Mi","Do","Fr","Sa"];
 let currentStatus   = null;
 let currentSchedule = {};
 let isOwner = false;
+
+function updateOwnerUI() {
+  const footer = document.getElementById("appFooterVersion");
+  if (footer) footer.hidden = !isOwner;
+}
 let activeTab = "home";
 let weekOffset = 0;
 let selectedDayDetail = null;
 let trainingUser = localStorage.getItem("kg_user") || "";
 let pendingWorkoutStart = false;
 let checkedInAs = "";
+let growthMvpInitialized = false;
 
 function checkinToTrainingDuration(min) {
   if (min >= 60) return 60;
@@ -242,6 +249,326 @@ function blockWhenStr(b) {
   return d===1?"morgen":b.recurring?DAYS[b.day]:`in ${d} Tagen`;
 }
 
+/* ================= GROWTH MVP: PROFILE, PLAN, STREAK, FEED ================= */
+
+function safeUserKey(user) {
+  return String(user || "").trim().replace(/[.#$/\[\]]/g, "_");
+}
+function mvpProfileRef(user) { return ref(db, `gym/customWorkouts/${safeUserKey(user)}/__mvp_profile`); }
+function mvpPlanRef(user) { return ref(db, `gym/customWorkouts/${safeUserKey(user)}/__mvp_plan`); }
+function profileRef(user) { return mvpProfileRef(user); }
+function planRef(user) { return mvpPlanRef(user); }
+function feedEntriesRef() { return ref(db, "gym/customWorkouts/mvp_shared_feed/items"); }
+
+function defaultProfileForUser(user) {
+  return {
+    name: user || "",
+    avatar: "💪",
+    goal: "",
+    favoriteBodies: []
+  };
+}
+
+function localProfileKey(user) { return `kg_profile_${safeUserKey(user)}`; }
+function localPlanKey(user) { return `kg_plan_${safeUserKey(user)}`; }
+function localFeedKey() { return "kg_feed_local"; }
+
+async function addFeedEvent(type, text, user = "") {
+  try {
+    await push(feedEntriesRef(), { type, text, user, ts: Date.now() });
+  } catch (err) {
+    // Feed fallback: keep local timeline usable if Firebase rules deny writes.
+    try {
+      const list = JSON.parse(localStorage.getItem(localFeedKey()) || "[]");
+      list.unshift({ type, text, user, ts: Date.now(), localOnly: true });
+      localStorage.setItem(localFeedKey(), JSON.stringify(list.slice(0, 40)));
+    } catch {}
+    console.warn("Feed write failed:", err?.message || err);
+  }
+}
+
+async function loadProfile(user) {
+  if (!user) return defaultProfileForUser("");
+  const localFallback = (() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(localProfileKey(user)) || "null");
+      if (!raw) return null;
+      return {
+        name: raw.name || user,
+        avatar: raw.avatar || "💪",
+        goal: raw.goal || "",
+        favoriteBodies: Array.isArray(raw.favoriteBodies) ? raw.favoriteBodies : []
+      };
+    } catch { return null; }
+  })();
+  try {
+    const snap = await get(mvpProfileRef(user));
+    const val = snap.val();
+    if (!val) return localFallback || defaultProfileForUser(user);
+    const meta = val.meta || {};
+    return {
+      name: meta.name || user,
+      avatar: meta.avatar || "💪",
+      goal: meta.goal || "",
+      favoriteBodies: Array.isArray(meta.favoriteBodies) ? meta.favoriteBodies : []
+    };
+  } catch {
+    return localFallback || defaultProfileForUser(user);
+  }
+}
+
+async function saveProfile(user, profile) {
+  localStorage.setItem(localProfileKey(user), JSON.stringify(profile));
+  await set(mvpProfileRef(user), {
+    name: "__MVP_PROFILE__",
+    exerciseIds: ["mvp-profile"],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    meta: profile
+  });
+}
+
+async function loadPlan(user) {
+  if (!user) return [];
+  const localFallback = (() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(localPlanKey(user)) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch { return []; }
+  })();
+  try {
+    const snap = await get(mvpPlanRef(user));
+    const val = snap.val();
+    if (!val) return localFallback;
+    return Array.isArray(val.meta?.items) ? val.meta.items : localFallback;
+  } catch {
+    return localFallback;
+  }
+}
+
+async function savePlan(user, items) {
+  localStorage.setItem(localPlanKey(user), JSON.stringify(items));
+  await set(mvpPlanRef(user), {
+    name: "__MVP_PLAN__",
+    exerciseIds: ["mvp-plan"],
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    meta: { items }
+  });
+}
+
+async function recordWorkoutCompletion(user, exerciseCount) {
+  if (!user) return;
+  try {
+    await addFeedEvent("workout", `${user} hat ein Workout abgeschlossen (${exerciseCount} Übungen).`, user);
+  } catch (err) {
+    console.warn("Workout completion event fallback:", err?.message || err);
+  }
+}
+
+async function getStreak(user) {
+  if (!user) return 0;
+  try {
+    const history = await getFullUserHistory(user);
+    const daySet = new Set();
+    Object.values(history || {}).forEach(entries => {
+      (entries || []).forEach(entry => {
+        if (entry?.date) {
+          const d = new Date(entry.date);
+          d.setHours(0, 0, 0, 0);
+          daySet.add(d.getTime());
+        }
+      });
+    });
+    if (!daySet.size) return 0;
+    const days = [...daySet].sort((a, b) => b - a);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayMs = today.getTime();
+    const yesterdayMs = todayMs - 86400000;
+    if (days[0] !== todayMs && days[0] !== yesterdayMs) return 0;
+    let streak = 1;
+    let cursor = days[0];
+    for (let i = 1; i < days.length; i++) {
+      if (days[i] === cursor - 86400000) {
+        streak++;
+        cursor = days[i];
+      } else if (days[i] < cursor - 86400000) {
+        break;
+      }
+    }
+    return streak;
+  } catch {
+    return 0;
+  }
+}
+
+async function getRecentFeed(limit = 8) {
+  try {
+    const snap = await get(feedEntriesRef());
+    const data = snap.val() || {};
+    const remote = Object.values(data)
+      .filter(Boolean)
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+      .slice(0, limit);
+    const local = JSON.parse(localStorage.getItem(localFeedKey()) || "[]");
+    return [...remote, ...local].sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(0, limit);
+  } catch {
+    try {
+      return JSON.parse(localStorage.getItem(localFeedKey()) || "[]").slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+}
+
+function renderPlanDayOptions(selectedDay) {
+  return DAYS_SHORT.map((day, i) => `<option value="${i}"${i === selectedDay ? " selected" : ""}>${day}</option>`).join("");
+}
+
+async function renderGrowthMvpSections() {
+  const wrap = document.getElementById("growthMvpSections");
+  if (!wrap) return;
+  const user = (trainingUser || "").trim();
+  if (!user) {
+    wrap.innerHTML = `<div class="mvp-card"><div class="mvp-title">MVP Features</div><div class="sub">Trage oben deinen Namen ein, um Profil, Plan-Builder, Streaks und Feed zu nutzen.</div></div>`;
+    return;
+  }
+
+  const [profile, planItems, streak, feedItems] = await Promise.all([
+    loadProfile(user),
+    loadPlan(user),
+    getStreak(user),
+    getRecentFeed()
+  ]);
+
+  const planRows = (planItems.length ? planItems : [{ day: 1, focus: "Ganzkörper", note: "" }]).map((item, idx) => `
+    <div class="mvp-plan-row" data-idx="${idx}">
+      <select class="time-input mvp-plan-day">${renderPlanDayOptions(item.day ?? 1)}</select>
+      <input class="name-input mvp-plan-focus" maxlength="30" placeholder="Fokus (z. B. Push)" value="${escapeAttr(item.focus || "")}">
+      <input class="name-input mvp-plan-note" maxlength="60" placeholder="Notiz (optional)" value="${escapeAttr(item.note || "")}">
+      <button type="button" class="btn-main btn-dark mvp-plan-remove">✕</button>
+    </div>
+  `).join("");
+
+  wrap.innerHTML = `
+    <div class="mvp-card">
+      <div class="mvp-title">Profil</div>
+      <div class="mvp-grid">
+        <input id="mvpProfileName" class="name-input" maxlength="20" placeholder="Name" value="${escapeAttr(profile.name || user)}">
+        <input id="mvpProfileAvatar" class="name-input" maxlength="3" placeholder="Avatar (Emoji)" value="${escapeAttr(profile.avatar || "💪")}">
+      </div>
+      <input id="mvpProfileGoal" class="name-input" maxlength="80" placeholder="Ziel (z. B. 3x/Woche trainieren)" value="${escapeAttr(profile.goal || "")}">
+      <div class="chip-row" id="mvpFavBodies">
+        ${Object.entries(BODY_LABELS).map(([k, l]) => `<button type="button" class="chip mvp-fav-chip${(profile.favoriteBodies || []).includes(k) ? " active" : ""}" data-body="${k}">${l}</button>`).join("")}
+      </div>
+      <button type="button" id="mvpSaveProfileBtn" class="btn-main btn-lime">Profil speichern</button>
+    </div>
+
+    <div class="mvp-card">
+      <div class="mvp-title">Einfacher Plan-Builder</div>
+      <div id="mvpPlanRows">${planRows}</div>
+      <button type="button" id="mvpAddPlanRowBtn" class="btn-main btn-dark">+ Trainingstag</button>
+      <button type="button" id="mvpSavePlanBtn" class="btn-main btn-lime">Plan speichern</button>
+    </div>
+
+    <div class="mvp-card">
+      <div class="mvp-title">Streaks</div>
+      <div class="mvp-streak"><strong>${streak}</strong> Tage in Folge trainiert</div>
+      <div class="sub">${streak > 0 ? "Bleib dran und halte die Serie am Laufen." : "Heute trainieren, um deine erste Serie zu starten."}</div>
+    </div>
+
+    <div class="mvp-card">
+      <div class="mvp-title">Basis-Feed</div>
+      <div class="mvp-feed-list">
+        ${feedItems.length ? feedItems.map(item => `<div class="mvp-feed-item"><div>${escapeAttr(item.text || "Aktivität")}</div><div class="mvp-feed-time">${new Date(item.ts || Date.now()).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</div></div>`).join("") : `<div class="sub">Noch keine Aktivitäten vorhanden.</div>`}
+      </div>
+    </div>
+  `;
+
+  const favSet = new Set(profile.favoriteBodies || []);
+  wrap.querySelectorAll(".mvp-fav-chip").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const body = btn.dataset.body;
+      if (favSet.has(body)) {
+        favSet.delete(body);
+        btn.classList.remove("active");
+      } else {
+        favSet.add(body);
+        btn.classList.add("active");
+      }
+    });
+  });
+
+  document.getElementById("mvpSaveProfileBtn")?.addEventListener("click", async () => {
+    const nextName = document.getElementById("mvpProfileName").value.trim() || user;
+    const payload = {
+      name: nextName,
+      avatar: (document.getElementById("mvpProfileAvatar").value.trim() || "💪").slice(0, 3),
+      goal: document.getElementById("mvpProfileGoal").value.trim(),
+      favoriteBodies: [...favSet]
+    };
+    try {
+      await saveProfile(nextName, payload);
+      if (nextName !== user) {
+        // Keep data tidy when a profile is renamed.
+        await remove(mvpProfileRef(user));
+      }
+      trainingUser = payload.name;
+      localStorage.setItem("kg_user", trainingUser);
+      await addFeedEvent("profile", `${payload.avatar} ${payload.name} hat das Profil aktualisiert.`, payload.name);
+      showToast("Profil gespeichert.", "success");
+      renderAll();
+    } catch (err) {
+      showToast(`Profil nur lokal gespeichert (${err?.code || err?.message || "Firebase-Fehler"}).`, "error", 5000);
+      trainingUser = payload.name;
+      localStorage.setItem("kg_user", trainingUser);
+      renderAll();
+    }
+  });
+
+  document.getElementById("mvpAddPlanRowBtn")?.addEventListener("click", () => {
+    const rows = document.getElementById("mvpPlanRows");
+    const idx = rows.querySelectorAll(".mvp-plan-row").length;
+    rows.insertAdjacentHTML("beforeend", `
+      <div class="mvp-plan-row" data-idx="${idx}">
+        <select class="time-input mvp-plan-day">${renderPlanDayOptions(1)}</select>
+        <input class="name-input mvp-plan-focus" maxlength="30" placeholder="Fokus (z. B. Pull)">
+        <input class="name-input mvp-plan-note" maxlength="60" placeholder="Notiz (optional)">
+        <button type="button" class="btn-main btn-dark mvp-plan-remove">✕</button>
+      </div>
+    `);
+    rows.querySelectorAll(".mvp-plan-remove").forEach(btn => {
+      btn.onclick = () => btn.closest(".mvp-plan-row").remove();
+    });
+  });
+
+  wrap.querySelectorAll(".mvp-plan-remove").forEach(btn => {
+    btn.addEventListener("click", () => btn.closest(".mvp-plan-row").remove());
+  });
+
+  document.getElementById("mvpSavePlanBtn")?.addEventListener("click", async () => {
+    const rows = [...wrap.querySelectorAll(".mvp-plan-row")].map(row => ({
+      day: parseInt(row.querySelector(".mvp-plan-day").value, 10),
+      focus: row.querySelector(".mvp-plan-focus").value.trim(),
+      note: row.querySelector(".mvp-plan-note").value.trim()
+    })).filter(item => item.focus);
+    if (!rows.length) {
+      showToast("Bitte mindestens einen Trainingstag mit Fokus angeben.", "error");
+      return;
+    }
+    try {
+      await savePlan(user, rows);
+      await addFeedEvent("plan", `${user} hat den Wochenplan aktualisiert (${rows.length} Tage).`, user);
+      showToast("Plan gespeichert.", "success");
+      renderGrowthMvpSections();
+    } catch (err) {
+      showToast(`Plan nur lokal gespeichert (${err?.code || err?.message || "Firebase-Fehler"}).`, "error", 5000);
+      renderGrowthMvpSections();
+    }
+  });
+}
+
 /* ================= WOCHENÜBERSICHT ================= */
 
 function startOfWeek(offset) {
@@ -267,16 +594,27 @@ function blocksForDate(dateObj) {
 
 function segmentCoverage(blocks) {
   const seg = { morning: false, afternoon: false, evening: false };
+  // Day-parts: Vormittag 06–12 | Nachmittag 12–18 | Abend 18–24
+  const parts = [
+    ["morning", 6 * 60, 12 * 60],
+    ["afternoon", 12 * 60, 18 * 60],
+    ["evening", 18 * 60, 24 * 60]
+  ];
   blocks.forEach(b => {
-    const s = b.startH*60+b.startM, e = b.endH*60+b.endM;
-    if (s < 12*60 && e > 6*60) seg.morning = true;
-    if (s < 18*60 && e > 12*60) seg.afternoon = true;
-    if (s < 24*60 && e > 18*60) seg.evening = true;
+    const s = (Number(b.startH) || 0) * 60 + (Number(b.startM) || 0);
+    const e = (Number(b.endH) || 0) * 60 + (Number(b.endM) || 0);
+    if (!(e > s)) return;
+    parts.forEach(([key, from, to]) => {
+      const overlap = Math.min(e, to) - Math.max(s, from);
+      if (overlap > 0) seg[key] = true;
+    });
   });
   return seg;
 }
 
 function renderWeekOverview() {
+  const wrap = document.getElementById("weekOverview");
+  if (!wrap) return;
   const wk = startOfWeek(weekOffset);
   const today = new Date(); today.setHours(0,0,0,0);
   let rows = "";
@@ -292,15 +630,15 @@ function renderWeekOverview() {
         <span class="week-day-num">${d.getDate()}.${d.getMonth()+1}.</span>
       </div>
       <div class="week-bar">
-        <div class="week-seg${seg.morning?" busy":""}"><span>Vormittag</span></div>
-        <div class="week-seg${seg.afternoon?" busy":""}"><span>Nachmittag</span></div>
-        <div class="week-seg${seg.evening?" busy":""}"><span>Abend</span></div>
+        <div class="week-seg${seg.morning?" busy":""}" title="Vormittag"><span>Vormittag</span></div>
+        <div class="week-seg${seg.afternoon?" busy":""}" title="Nachmittag"><span>Nachmittag</span></div>
+        <div class="week-seg${seg.evening?" busy":""}" title="Abend"><span>Abend</span></div>
       </div>
       <span class="week-chevron">›</span>
     </button>`;
   }
   const rangeLabel = `${wk.getDate()}.${wk.getMonth()+1}. – ${new Date(wk.getTime()+6*86400000).getDate()}.${new Date(wk.getTime()+6*86400000).getMonth()+1}.`;
-  document.getElementById("weekOverview").innerHTML = `
+  wrap.innerHTML = `
     <div class="week-nav">
       <button class="week-nav-btn" id="weekPrev">‹</button>
       <span class="week-range">${rangeLabel}</span>
@@ -351,6 +689,15 @@ function renderDayDetail() {
   document.getElementById("closeDayDetail").addEventListener("click", () => { selectedDayDetail = null; renderDayDetail(); });
 }
 
+function shouldSkipGrowthMvpRefresh() {
+  const activeEl = document.activeElement;
+  if (!activeEl) return false;
+  const mvpRoot = document.getElementById("growthMvpSections");
+  if (!mvpRoot) return false;
+  const isEditingField = ["INPUT", "TEXTAREA", "SELECT"].includes(activeEl.tagName);
+  return isEditingField && mvpRoot.contains(activeEl);
+}
+
 /* ================= STATUS / CHECK-IN (HOME) ================= */
 
 function renderAll() {
@@ -382,7 +729,9 @@ function renderAll() {
     </div>`;
   }
 
-  document.getElementById("card").innerHTML = cardHTML;
+  const cardEl = document.getElementById("card");
+  cardEl.className = effectivelyBusy ? "hero-card hero-busy" : "hero-card hero-free";
+  cardEl.innerHTML = cardHTML;
   document.getElementById("upcoming").innerHTML = upcomingHTML;
 
   let formHTML = "";
@@ -407,16 +756,13 @@ function renderAll() {
     checkedInAs = "";
   }
 
-  formHTML += `<div class="home-quick-nav">
-      <button type="button" class="home-quick-btn" data-goto="training">Training</button>
-      <button type="button" class="home-quick-btn" data-goto="ausstattung">Ausstattung</button>
-    </div>`;
-
   document.getElementById("form").innerHTML = formHTML;
 
   attachHomeListeners();
   if (!isFreeCheckin) startLocalTick(currentStatus);
-  renderWeekOverview();
+  if (!shouldSkipGrowthMvpRefresh()) {
+    renderGrowthMvpSections();
+  }
 }
 
 let tickInterval = null;
@@ -460,9 +806,6 @@ function attachHomeListeners() {
     pendingWorkoutStart = false;
     checkedInAs = "";
     remove(statusRef);
-  });
-  document.querySelectorAll(".home-quick-btn").forEach(btn => {
-    btn.addEventListener("click", () => switchTab(btn.dataset.goto));
   });
   document.querySelectorAll(".del-btn").forEach(btn => {
     btn.addEventListener("click", () => remove(ref(db, "gym/schedule/" + btn.dataset.id)));
@@ -521,13 +864,14 @@ function renderReservePage() {
     ? `${formSection}${dbOverviewPlaceholder}`
     : `<div class="section-title">Terminübersicht</div>${allBlocksHTML}${formSection}${dbOverviewPlaceholder}`;
 
+  renderWeekOverview();
   if (isOwner) renderDbOverview();
 
   document.getElementById("ownerLogin")?.addEventListener("click", () => {
     const pin = prompt("Owner PIN:");
-    if (pin === OWNER_PIN) { isOwner = true; renderReservePage(); } else alert("Falscher PIN.");
+    if (pin === OWNER_PIN) { isOwner = true; updateOwnerUI(); renderReservePage(); } else alert("Falscher PIN.");
   });
-  document.getElementById("ownerLogout")?.addEventListener("click", () => { isOwner = false; renderReservePage(); });
+  document.getElementById("ownerLogout")?.addEventListener("click", () => { isOwner = false; updateOwnerUI(); renderReservePage(); });
   document.querySelectorAll(".del-btn").forEach(btn => {
     btn.addEventListener("click", () => remove(ref(db, "gym/schedule/" + btn.dataset.id)));
   });
@@ -711,12 +1055,85 @@ function renderExerciseMediaHtml(ex, overrides = {}, { compact = false } = {}) {
   if (media.type === "mp4" || media.type === "video") {
     return `<video class="${vCls}" src="${escapeAttr(media.url)}" loop muted playsinline autoplay preload="metadata"></video>`;
   }
-  // auto: versuche .mp4, dann .gif – nur anzeigen wenn Datei existiert
   const base = escapeAttr(media.url);
   return `<span class="exercise-media--auto" data-exid="${escapeAttr(ex.id)}" hidden>
     <video class="${vCls}" src="${base}.mp4" loop muted playsinline autoplay preload="metadata"></video>
     <img class="exercise-media-gif" src="${base}.gif" alt="Demo: ${escapeAttr(ex.name)}" loading="lazy" hidden>
   </span>`;
+}
+
+function renderExerciseThumbHtml(ex, overrides = {}) {
+  const media = getExerciseMedia(ex, overrides);
+  if (!media) return `<span class="exercise-thumb exercise-thumb--empty" aria-hidden="true"></span>`;
+  if (media.type === "youtube") {
+    return `<span class="exercise-thumb exercise-thumb--yt" aria-hidden="true">▶</span>`;
+  }
+  if (media.type === "gif") {
+    return `<img class="exercise-thumb" src="${escapeAttr(media.url)}" alt="" loading="lazy">`;
+  }
+  if (media.type === "mp4" || media.type === "video") {
+    return `<video class="exercise-thumb" src="${escapeAttr(media.url)}" muted playsinline preload="metadata"></video>`;
+  }
+  const base = escapeAttr(media.url);
+  return `<span class="exercise-thumb-wrap exercise-thumb--auto" data-exid="${escapeAttr(ex.id)}" hidden>
+    <video class="exercise-thumb" src="${base}.mp4" muted playsinline preload="metadata"></video>
+    <img class="exercise-thumb" src="${base}.gif" alt="" loading="lazy" hidden>
+  </span>`;
+}
+
+function initExerciseThumbFallbacks(root = document) {
+  root.querySelectorAll(".exercise-thumb--auto").forEach(wrap => {
+    const video = wrap.querySelector("video.exercise-thumb");
+    const img = wrap.querySelector("img.exercise-thumb");
+
+    function showThumb(el) {
+      wrap.replaceWith(el);
+      el.classList.add("exercise-thumb--loaded");
+    }
+
+    if (video) {
+      video.addEventListener("loadeddata", () => showThumb(video), { once: true });
+      video.addEventListener("error", () => {
+        if (img) {
+          img.addEventListener("load", () => showThumb(img), { once: true });
+          img.addEventListener("error", () => wrap.replaceWith(createEmptyThumb()), { once: true });
+        } else {
+          wrap.replaceWith(createEmptyThumb());
+        }
+      }, { once: true });
+    } else if (img) {
+      img.addEventListener("load", () => showThumb(img), { once: true });
+      img.addEventListener("error", () => wrap.replaceWith(createEmptyThumb()), { once: true });
+    } else {
+      wrap.replaceWith(createEmptyThumb());
+    }
+  });
+}
+
+function createEmptyThumb() {
+  const el = document.createElement("span");
+  el.className = "exercise-thumb exercise-thumb--empty";
+  el.setAttribute("aria-hidden", "true");
+  return el;
+}
+
+function setWorkoutProgress(current, total) {
+  const bar = document.getElementById("workoutProgressBar");
+  if (!bar) return;
+  if (!total || total <= 0) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  const label = document.getElementById("workoutProgressLabel");
+  const fill = document.getElementById("workoutProgressFill");
+  if (label) label.textContent = `Übung ${current} / ${total}`;
+  if (fill) fill.style.width = `${Math.min(100, (current / total) * 100)}%`;
+}
+
+function hideWorkoutProgress() {
+  const bar = document.getElementById("workoutProgressBar");
+  if (bar) bar.hidden = true;
 }
 
 function initExerciseMediaFallbacks(root = document) {
@@ -781,7 +1198,14 @@ function escapeAttr(s) {
   return String(s || "").replace(/"/g, "&quot;");
 }
 
-const BODY_ICONS = { beine: "🍑", bauch: "🧘", ruecken: "🫁", arme: "💪", brust: "🫁" };
+const BODY_ICONS = {
+  beine: `<img class="body-icon-img" src="./assets/body-icon-beine.png" alt="" aria-hidden="true">`,
+  bauch: `<img class="body-icon-img" src="./assets/body-icon-bauch.png" alt="" aria-hidden="true">`,
+  ruecken: `<img class="body-icon-img" src="./assets/body-icon-ruecken.png" alt="" aria-hidden="true">`,
+  arme: `<img class="body-icon-img" src="./assets/body-icon-arme.png" alt="" aria-hidden="true">`,
+  brust: `<img class="body-icon-img" src="./assets/body-icon-brust.png" alt="" aria-hidden="true">`
+};
+const BODY_ICON_FALLBACK = `<img class="body-icon-img" src="./assets/body-icon-brust.png" alt="" aria-hidden="true">`;
 const BODY_ORDER = ["beine", "bauch", "ruecken", "arme", "brust"];
 
 function renderAddExerciseForm(body) {
@@ -819,7 +1243,7 @@ async function renderUebungenPage() {
   wrap.innerHTML = ownerBar + BODY_ORDER.map(body => `
     <div class="faq-section">
       <button class="faq-section-btn">
-        <span class="faq-section-icon">${BODY_ICONS[body] || "🏋️"}</span>
+        <span class="faq-section-icon">${BODY_ICONS[body] || BODY_ICON_FALLBACK}</span>
         <span class="faq-section-label">${BODY_LABELS[body] || body}</span>
         <span class="faq-section-chevron">▾</span>
       </button>
@@ -829,7 +1253,13 @@ async function renderUebungenPage() {
           const isCustom = !!customExercises[ex.id];
           return `
           <div class="faq-item" data-exid="${ex.id}">
-            <button class="faq-question">${d.name}${isCustom ? ' <span class="detail-tag">eigen</span>' : ""} <span class="faq-chevron">▾</span></button>
+            <button class="faq-question">
+              <span class="faq-question-main">
+                ${renderExerciseThumbHtml(ex, overrides)}
+                <span class="faq-question-text">${d.name}${isCustom ? ' <span class="detail-tag">eigen</span>' : ""}</span>
+              </span>
+              <span class="faq-chevron">▾</span>
+            </button>
             <div class="faq-answer"><div class="faq-answer-inner">
               ${renderExerciseMediaHtml(ex, overrides)}
               <ul>
@@ -856,11 +1286,12 @@ async function renderUebungenPage() {
 
   document.getElementById("uebungenOwnerLogin")?.addEventListener("click", () => {
     const pin = prompt("Owner PIN:");
-    if (pin === OWNER_PIN) { isOwner = true; renderUebungenPage(); }
+    if (pin === OWNER_PIN) { isOwner = true; updateOwnerUI(); renderUebungenPage(); }
     else if (pin != null) alert("Falscher PIN.");
   });
   document.getElementById("uebungenOwnerLogout")?.addEventListener("click", () => {
     isOwner = false;
+    updateOwnerUI();
     renderUebungenPage();
   });
 
@@ -880,6 +1311,9 @@ async function renderUebungenPage() {
       if (!isOpen) item.classList.add("open");
     });
   });
+
+  initExerciseMediaFallbacks(wrap);
+  initExerciseThumbFallbacks(wrap);
 
   wrap.querySelectorAll(".toggle-add-exercise-btn").forEach(btn => {
     btn.addEventListener("click", (e) => {
@@ -1105,8 +1539,8 @@ async function getLastWorkout(user) {
 
 /* ================= EIGENE WORKOUT-VORLAGEN (CUSTOM WORKOUTS) ================= */
 
-function customWorkoutsRef(user) { return ref(db, `gym/customWorkouts/${user}`); }
-function customWorkoutRef(user, id) { return ref(db, `gym/customWorkouts/${user}/${id}`); }
+function customWorkoutsRef(user) { return ref(db, `gym/customWorkouts/${safeUserKey(user)}`); }
+function customWorkoutRef(user, id) { return ref(db, `gym/customWorkouts/${safeUserKey(user)}/${id}`); }
 
 let manualSelectedExerciseIds = new Set();
 
@@ -1115,6 +1549,7 @@ async function getCustomWorkouts(user) {
     const snap = await get(customWorkoutsRef(user));
     const data = snap.val() || {};
     return Object.entries(data)
+      .filter(([, w]) => !!w && Array.isArray(w.exerciseIds) && !String(w.name || "").startsWith("__MVP_"))
       .map(([id, w]) => ({ id, ...w }))
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   } catch (err) {
@@ -1300,6 +1735,7 @@ function computeRecommendation(last, ex) {
 /* ================= TRAINING TAB RENDERING ================= */
 
 async function renderTrainingSetup() {
+  hideWorkoutProgress();
   const wrap = document.getElementById("trainingContent");
   await loadCustomExercises();
   const allUsers = await getAllUsers();
@@ -1458,6 +1894,7 @@ async function renderDbOverview() {
 }
 
 async function renderUserHistory(user) {
+  hideWorkoutProgress();
   const wrap = document.getElementById("trainingContent");
   wrap.innerHTML = `<div class="section-title">Historie: ${user}</div><div class="skeleton-card"><div class="skeleton-line" style="width:60%"></div><div class="skeleton-line" style="width:90%"></div><div class="skeleton-line" style="width:40%"></div></div>`;
   const history = await getFullUserHistory(user);
@@ -1580,6 +2017,7 @@ async function renderUserHistory(user) {
 }
 
 async function renderWarmup() {
+  hideWorkoutProgress();
   const wrap = document.getElementById("trainingContent");
   wrap.innerHTML = `<div class="section-title">🔥 Aufwärmen (ca. 5 Min.)</div>
     <div class="upcoming-wrap">
@@ -1598,6 +2036,7 @@ let restTimerInterval = null;
 
 function renderRestTimer() {
   clearInterval(restTimerInterval);
+  setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
   const wrap = document.getElementById("trainingContent");
   const savedDuration = parseInt(localStorage.getItem("kg_rest_duration")) || 90;
   let remaining = savedDuration;
@@ -1662,10 +2101,15 @@ function formatRestTime(sec) {
 async function renderTrainingExercise() {
   const wrap = document.getElementById("trainingContent");
   if (currentExerciseIdx >= currentWorkoutQueue.length) {
+    hideWorkoutProgress();
     const bodyList = [...completedBodies];
     const bodyNamesHTML = bodyList.length
       ? `<ul style="margin:10px 0 0;padding-left:18px;color:#ddd;line-height:1.6">${bodyList.map(b=>`<li>${BODY_LABELS[b]||b}</li>`).join("")}</ul>`
       : `<div class="sub" style="margin-top:8px">Keine Muskelgruppe erfasst.</div>`;
+    if (!growthMvpInitialized && trainingUser) {
+      growthMvpInitialized = true;
+      await recordWorkoutCompletion(trainingUser, currentWorkoutQueue.length);
+    }
     wrap.innerHTML = `<div class="section-title">Fertig! 🎉</div><div class="info-box">Workout abgeschlossen, ${currentWorkoutQueue.length} Übungen protokolliert.</div>
       <div class="upcoming-wrap" style="text-align:center">
         <div class="upcoming-title">Trainierte Muskelgruppen</div>
@@ -1676,6 +2120,8 @@ async function renderTrainingExercise() {
     document.getElementById("restartTrainingBtn").addEventListener("click", renderTrainingSetup);
     return;
   }
+  growthMvpInitialized = false;
+  setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
   const ex = currentWorkoutQueue[currentExerciseIdx];
   const overrides = await getExerciseOverrides();
   const display = getExerciseDisplay(ex, overrides);
@@ -1693,8 +2139,7 @@ async function renderTrainingExercise() {
         <div class="field-label">${ex.rackLabel || "Rack-Einstellung"} (Stufe)</div>
         <input type="number" step="1" id="logRackSetting" class="time-input" placeholder="z.B. 5">
       </div>` : "";
-  wrap.innerHTML = `<div class="section-title">Übung ${currentExerciseIdx+1}/${currentWorkoutQueue.length}</div>
-    <div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
+  wrap.innerHTML = `<div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
       <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${display.name}</div>
       ${mediaHTML}
       <div class="sub" id="recoNote" style="color:#999;margin-bottom:14px">Lade letzten Wert…</div>
@@ -1857,10 +2302,10 @@ async function renderTrainingExercise() {
 
 function switchTab(tab) {
   activeTab = tab;
+  if (tab !== "training") hideWorkoutProgress();
   document.querySelectorAll(".tab-page").forEach(p => p.classList.remove("active"));
   document.getElementById("page-" + tab).classList.add("active");
-  document.querySelectorAll(".navmenu-item").forEach(i => i.classList.toggle("active", i.dataset.tab === tab));
-  document.getElementById("navmenu").classList.remove("open");
+  document.querySelectorAll(".bottom-tab").forEach(i => i.classList.toggle("active", i.dataset.tab === tab));
   document.getElementById("navLabel").textContent = NAV_LABELS[tab];
   window.scrollTo(0,0);
   if (tab === "reserve") renderReservePage();
@@ -1869,13 +2314,10 @@ function switchTab(tab) {
   if (tab === "uebungen") renderUebungenPage();
 }
 
-const NAV_LABELS = { home: "Status & Check-in", reserve: "Reservieren", training: "Training", ausstattung: "Ausstattung", uebungen: "Übungen" };
+const NAV_LABELS = { home: "Übersicht", reserve: "Reservieren", training: "Training", ausstattung: "Ausstattung", uebungen: "Übungen" };
 
 function initNav() {
-  document.getElementById("navToggle").addEventListener("click", () => {
-    document.getElementById("navmenu").classList.toggle("open");
-  });
-  document.querySelectorAll(".navmenu-item").forEach(item => {
+  document.querySelectorAll(".bottom-tab").forEach(item => {
     item.addEventListener("click", () => switchTab(item.dataset.tab));
   });
 }
@@ -1912,3 +2354,4 @@ loadCustomExercises();
 initFaqListeners();
 initNav();
 initTheme();
+updateOwnerUI();
