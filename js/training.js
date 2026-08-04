@@ -1,5 +1,7 @@
 import { ref, get, set, remove, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { db } from "./firebase.js";
+import { getAuthSnapshot } from "./auth.js";
+import { Paths, safeUserKey as modelSafeUserKey } from "./data-model.js";
 import { BODY_LABELS as DATA_BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC } from "./data.js";
 
 export function createTrainingModule(ctx = {}) {
@@ -17,6 +19,8 @@ export function createTrainingModule(ctx = {}) {
 
   let trainingUser = String(ctx.getTrainingUser?.() || "").trim();
   let growthMvpInitialized = !!ctx.getGrowthMvpInitialized?.();
+  /** Owner may inspect another account key (uid or legacy name). */
+  let ownerViewKey = null;
 
   function syncTrainingUser() {
     trainingUser = String(ctx.getTrainingUser?.() || "").trim();
@@ -34,7 +38,41 @@ export function createTrainingModule(ctx = {}) {
   }
 
   function safeUserKey(user) {
-    return String(user || "").trim().replace(/[.#$/\[\]]/g, "_");
+    return modelSafeUserKey(user);
+  }
+
+  function account() {
+    const snap = getAuthSnapshot();
+    return {
+      uid: snap.uid,
+      isPermanent: !!snap.isPermanent,
+      email: snap.email || "",
+      isOwner: !!ctx.getIsOwner?.()
+    };
+  }
+
+  /** Storage key for writes — always own uid when logged in. */
+  function writeKey() {
+    const { uid, isPermanent } = account();
+    if (!isPermanent || !uid) return null;
+    return uid;
+  }
+
+  /** Storage key for reads — own uid, or ownerViewKey when owner inspects someone. */
+  function readKey() {
+    const { isOwner } = account();
+    if (isOwner && ownerViewKey) return ownerViewKey;
+    return writeKey();
+  }
+
+  function requireLoginHtml() {
+    return `
+      <div class="section-title">Training</div>
+      <div class="info-box">
+        Training ist nur nach Anmeldung möglich — damit deine Daten fest zu deinem Konto gehören.
+        <br><br>
+        Gehe zur <strong>Übersicht</strong>, sichere dein Konto per E-Mail-Link, und speichere deinen Profilnamen.
+      </div>`;
   }
 
   /* ============ TRAININGSDATEN EXPORT ============ */
@@ -190,38 +228,70 @@ export function createTrainingModule(ctx = {}) {
     return result.slice(0, count);
   }
 
-  function logRef(user, exId) { return ref(db, `gym/logs/${user}/${exId}`); }
-  function lastWorkoutRef(user) { return ref(db, `gym/lastWorkout/${user}`); }
-  function allLogsRef() { return ref(db, "gym/logs"); }
+  function logRef(key, exId) { return ref(db, `gym/logs/${key}/${exId}`); }
+  function lastWorkoutRef(key) { return ref(db, `gym/lastWorkout/${key}`); }
+  function logsRootRef() { return ref(db, "gym/logs"); }
 
-  function getLastLog(user, exId) {
-    return get(logRef(user, exId)).then(snap => {
-      const val = snap.val();
+  function mergeEntryMaps(a = {}, b = {}) {
+    return { ...a, ...b };
+  }
+
+  async function loadLogTree(key) {
+    if (!key) return {};
+    try {
+      const snap = await get(ref(db, Paths.logs(key)));
+      return snap.val() || {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Own history: uid logs + optional legacy name logs (read-only migration).
+   * Owner inspecting another key: that key only.
+   */
+  async function loadMergedLogTree(key, legacyName = "") {
+    const primary = await loadLogTree(key);
+    const { isOwner } = account();
+    if (isOwner && ownerViewKey) return primary;
+    const name = safeUserKey(legacyName || trainingUser);
+    if (!name || name === key) return primary;
+    const legacy = await loadLogTree(name);
+    const out = { ...primary };
+    Object.entries(legacy).forEach(([exId, entries]) => {
+      out[exId] = mergeEntryMaps(out[exId], entries);
+    });
+    return out;
+  }
+
+  function getLastLog(key, exId) {
+    return loadMergedLogTree(key, trainingUser).then((tree) => {
+      const val = tree[exId];
       if (!val) return null;
       const entries = Object.values(val);
-      entries.sort((a,b) => b.date - a.date);
+      entries.sort((a, b) => b.date - a.date);
       return entries[0] || null;
-    }).catch(() => { showToast("Letzter Wert konnte nicht geladen werden.", "error"); return null; });
+    }).catch(() => {
+      showToast("Letzter Wert konnte nicht geladen werden.", "error");
+      return null;
+    });
   }
 
-  function getUserHistory(user) {
-    return get(logRef(user, "")).catch(()=>null); // placeholder unused
-  }
-
-  async function getFullUserHistory(user) {
-    const snap = await get(ref(db, `gym/logs/${user}`));
-    const data = snap.val() || {};
+  async function getFullUserHistory(key) {
+    const data = await loadMergedLogTree(key, trainingUser);
     const result = {};
     Object.entries(data).forEach(([exId, entries]) => {
-      const list = Object.entries(entries).map(([key, val]) => ({ ...val, _key: key })).sort((a,b)=>b.date-a.date);
+      const list = Object.entries(entries || {})
+        .map(([k, val]) => ({ ...val, _key: k }))
+        .sort((a, b) => b.date - a.date);
       result[exId] = list;
     });
     return result;
   }
 
-  async function updateLogEntry(user, exId, key, updates) {
+  async function updateLogEntry(key, exId, entryKey, updates) {
     try {
-      await set(ref(db, `gym/logs/${user}/${exId}/${key}`), updates);
+      await set(ref(db, `gym/logs/${key}/${exId}/${entryKey}`), updates);
       showToast("Eintrag aktualisiert.", "success", 2000);
       return true;
     } catch (err) {
@@ -230,9 +300,9 @@ export function createTrainingModule(ctx = {}) {
     }
   }
 
-  async function deleteLogEntry(user, exId, key) {
+  async function deleteLogEntry(key, exId, entryKey) {
     try {
-      await remove(ref(db, `gym/logs/${user}/${exId}/${key}`));
+      await remove(ref(db, `gym/logs/${key}/${exId}/${entryKey}`));
       showToast("Eintrag gelöscht.", "success", 2000);
       return true;
     } catch (err) {
@@ -241,42 +311,80 @@ export function createTrainingModule(ctx = {}) {
     }
   }
 
+  /**
+   * Owner directory: profiles + known log keys.
+   * @returns {Promise<Array<{key:string,label:string}>>}
+   */
   async function getAllUsers() {
+    const { isOwner, uid } = account();
+    if (!isOwner) {
+      return uid ? [{ key: uid, label: trainingUser || "Ich" }] : [];
+    }
     try {
-      const logsSnap = await get(allLogsRef());
-      const logsUsers = Object.keys(logsSnap.val() || {});
-      const lwSnap = await get(ref(db, "gym/lastWorkout"));
-      const lwUsers = Object.keys(lwSnap.val() || {});
-      return [...new Set([...logsUsers, ...lwUsers])].sort();
+      const [usersSnap, logsSnap, lwSnap] = await Promise.all([
+        get(ref(db, "gym/users")).catch(() => null),
+        get(logsRootRef()).catch(() => null),
+        get(ref(db, "gym/lastWorkout")).catch(() => null)
+      ]);
+      const map = new Map();
+      const users = usersSnap?.val() || {};
+      Object.entries(users).forEach(([id, p]) => {
+        map.set(id, { key: id, label: p?.displayName || id.slice(0, 8) });
+      });
+      Object.keys(logsSnap?.val() || {}).forEach((id) => {
+        if (!map.has(id)) map.set(id, { key: id, label: id });
+      });
+      Object.keys(lwSnap?.val() || {}).forEach((id) => {
+        if (!map.has(id)) map.set(id, { key: id, label: id });
+      });
+      return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "de"));
     } catch (err) {
-      showToast("Nutzerliste konnte nicht geladen werden. Prüfe deine Verbindung.", "error");
+      showToast("Nutzerliste konnte nicht geladen werden (Owner-Rolle in Firebase nötig?).", "error");
       return [];
     }
   }
 
-  async function saveLastWorkout(user, exerciseIds) {
+  async function saveLastWorkout(key, exerciseIds) {
     try {
-      await set(lastWorkoutRef(user), { date: Date.now(), duration: selectedDuration, body: [...selectedBody], level: selectedLevel, exerciseIds });
+      await set(lastWorkoutRef(key), {
+        date: Date.now(),
+        duration: selectedDuration,
+        body: [...selectedBody],
+        level: selectedLevel,
+        exerciseIds
+      });
     } catch (err) {
       showToast("Workout konnte nicht gespeichert werden.", "error");
     }
   }
 
-  async function getLastWorkout(user) {
-    const snap = await get(lastWorkoutRef(user));
-    return snap.val();
+  async function getLastWorkout(key) {
+    try {
+      const snap = await get(lastWorkoutRef(key));
+      const val = snap.val();
+      if (val) return val;
+      // Legacy name fallback for own account only
+      const { isOwner } = account();
+      if (!isOwner && trainingUser && safeUserKey(trainingUser) !== key) {
+        const legacy = await get(lastWorkoutRef(safeUserKey(trainingUser)));
+        return legacy.val();
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   /* ================= EIGENE WORKOUT-VORLAGEN (CUSTOM WORKOUTS) ================= */
 
-  function customWorkoutsRef(user) { return ref(db, `gym/customWorkouts/${safeUserKey(user)}`); }
-  function customWorkoutRef(user, id) { return ref(db, `gym/customWorkouts/${safeUserKey(user)}/${id}`); }
+  function customWorkoutsRef(key) { return ref(db, `gym/customWorkouts/${safeUserKey(key)}`); }
+  function customWorkoutRef(key, id) { return ref(db, `gym/customWorkouts/${safeUserKey(key)}/${id}`); }
 
   let manualSelectedExerciseIds = new Set();
 
-  async function getCustomWorkouts(user) {
+  async function getCustomWorkouts(key) {
     try {
-      const snap = await get(customWorkoutsRef(user));
+      const snap = await get(customWorkoutsRef(key));
       const data = snap.val() || {};
       return Object.entries(data)
         .filter(([, w]) => !!w && Array.isArray(w.exerciseIds) && !String(w.name || "").startsWith("__MVP_"))
@@ -288,10 +396,10 @@ export function createTrainingModule(ctx = {}) {
     }
   }
 
-  async function saveCustomWorkout(user, name, exerciseIds) {
+  async function saveCustomWorkout(key, name, exerciseIds) {
     try {
-      const id = push(customWorkoutsRef(user)).key;
-      await set(customWorkoutRef(user, id), { name, exerciseIds, createdAt: Date.now() });
+      const id = push(customWorkoutsRef(key)).key;
+      await set(customWorkoutRef(key, id), { name, exerciseIds, createdAt: Date.now() });
       showToast(`Workout "${name}" gespeichert.`, "success");
       return id;
     } catch (err) {
@@ -300,9 +408,9 @@ export function createTrainingModule(ctx = {}) {
     }
   }
 
-  async function deleteCustomWorkout(user, id) {
+  async function deleteCustomWorkout(key, id) {
     try {
-      await remove(customWorkoutRef(user, id));
+      await remove(customWorkoutRef(key, id));
       showToast("Workout gelöscht.", "success", 2000);
       return true;
     } catch (err) {
@@ -334,11 +442,12 @@ export function createTrainingModule(ctx = {}) {
   async function renderCustomWorkoutsSection() {
     const wrap = document.getElementById("customWorkoutsSection");
     if (!wrap) return;
-    if (!trainingUser) {
-      wrap.innerHTML = `<div class="info-box" style="margin-top:16px">Bitte zuerst oben deinen Namen eingeben, um eigene Workouts zu erstellen und zu speichern.</div>`;
+    const key = readKey();
+    if (!key) {
+      wrap.innerHTML = "";
       return;
     }
-    const saved = await getCustomWorkouts(trainingUser);
+    const saved = await getCustomWorkouts(key);
     wrap.innerHTML = `
       <div class="section-title" style="margin-top:24px">Eigene Workouts</div>
       ${saved.length ? `<div class="faq-wrap" style="margin-bottom:12px">${saved.map(w => `
@@ -378,7 +487,7 @@ export function createTrainingModule(ctx = {}) {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         if (!confirm("Dieses Workout wirklich löschen?")) return;
-        await deleteCustomWorkout(trainingUser, btn.dataset.workoutid);
+        await deleteCustomWorkout(key, btn.dataset.workoutid);
         renderCustomWorkoutsSection();
       });
     });
@@ -391,6 +500,7 @@ export function createTrainingModule(ctx = {}) {
   function renderManualWorkoutBuilder() {
     const builder = document.getElementById("manualWorkoutBuilder");
     if (!builder) return;
+    const key = writeKey();
     builder.innerHTML = `
       <div class="section-title" style="margin-top:20px">Übungen auswählen</div>
       <div id="manualExercisePickerList"></div>
@@ -405,7 +515,8 @@ export function createTrainingModule(ctx = {}) {
       const name = document.getElementById("manualWorkoutNameInput").value.trim();
       if (!name) { alert("Bitte einen Namen für das Workout eingeben."); return; }
       if (manualSelectedExerciseIds.size === 0) { alert("Bitte mindestens eine Übung auswählen."); return; }
-      await saveCustomWorkout(trainingUser, name, [...manualSelectedExerciseIds]);
+      if (!key) { alert("Bitte zuerst anmelden."); return; }
+      await saveCustomWorkout(key, name, [...manualSelectedExerciseIds]);
       manualSelectedExerciseIds = new Set();
       renderCustomWorkoutsSection();
     });
@@ -468,95 +579,142 @@ export function createTrainingModule(ctx = {}) {
     syncTrainingUser();
     hideWorkoutProgress();
     const wrap = document.getElementById("trainingContent");
+    const { isPermanent, email, isOwner, uid } = account();
+
+    if (!isPermanent || !uid) {
+      ownerViewKey = null;
+      wrap.innerHTML = requireLoginHtml();
+      return;
+    }
+
+    // Non-owner always works on own uid
+    if (!isOwner) ownerViewKey = null;
+    if (isOwner && !ownerViewKey) ownerViewKey = uid;
+
     await loadCustomExercises();
-    const allUsers = await getAllUsers();
-    const profileChipsHTML = allUsers.length
-      ? `<div class="chip-row" style="margin-bottom:10px">${allUsers.map(u=>`<button class="chip profile-chip${u===trainingUser?" active":""}" data-user="${u}">${u}</button>`).join("")}</div>`
-      : "";
+    const activeKey = readKey();
+    const viewingOther = isOwner && ownerViewKey && ownerViewKey !== uid;
+
+    let ownerChipsHTML = "";
+    if (isOwner) {
+      const allUsers = await getAllUsers();
+      ownerChipsHTML = `
+        <div class="section-title">Owner: Profil wählen</div>
+        <div class="chip-row" style="margin-bottom:10px">
+          ${allUsers.map((u) => `<button type="button" class="chip profile-chip${u.key === ownerViewKey ? " active" : ""}" data-key="${u.key}">${u.label}</button>`).join("")}
+        </div>`;
+    }
 
     wrap.innerHTML = `
-      <div class="section-title">Wer trainiert?</div>
-      ${profileChipsHTML}
-      <input id="userNameInput" class="name-input" placeholder="Dein Name" maxlength="20" value="${trainingUser}">
+      ${ownerChipsHTML}
+      <div class="section-title">${viewingOther ? "Ansicht fremdes Profil" : "Dein Trainingsprofil"}</div>
+      <div class="info-box" style="margin-bottom:12px">
+        Angemeldet als <strong>${email || "Konto"}</strong><br>
+        Anzeigename: <strong>${trainingUser || "— bitte unter Übersicht im Profil setzen —"}</strong>
+        ${viewingOther ? `<br><span style="color:#f5c542">Owner schaut Daten von Key <code>${ownerViewKey}</code> an (nur Lesen/Verwalten).</span>` : ""}
+      </div>
+      ${!viewingOther ? `
+        <input id="userNameInput" class="name-input" placeholder="Dein Anzeigename" maxlength="40" value="${trainingUser}">
+        <div class="sub" style="margin-bottom:10px">Name wird in deinem Profil gespeichert — Trainingsdaten liegen an deinem Konto (nicht am Namen).</div>
+      ` : ""}
       <div id="lastWorkoutBox"></div>
-      <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Meine bisherigen Übungen ansehen</button></div>
+      <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
 
+      ${!viewingOther ? `
       <div class="section-title" style="margin-top:20px">Dauer</div>
       <div class="dur-row" id="trainDurRow">
-        ${[15,30,45,60].map(m=>`<button class="btn-dur${m===selectedDuration?" active":""}" data-min="${m}">${m} min</button>`).join("")}
+        ${[15, 30, 45, 60].map((m) => `<button class="btn-dur${m === selectedDuration ? " active" : ""}" data-min="${m}">${m} min</button>`).join("")}
       </div>
 
       <div class="section-title" style="margin-top:20px">Körperbereich</div>
       <div class="chip-row" id="bodyChips">
-        ${Object.entries(BODY_LABELS).map(([k,l])=>`<button class="chip${selectedBody.has(k)?" active":""}" data-body="${k}">${l}</button>`).join("")}
+        ${Object.entries(BODY_LABELS).map(([k, l]) => `<button class="chip${selectedBody.has(k) ? " active" : ""}" data-body="${k}">${l}</button>`).join("")}
       </div>
 
       <div class="section-title" style="margin-top:20px">Level</div>
       <div class="chip-row" id="levelChips" style="flex-direction:column; gap:8px; display:flex;">
-        ${LEVEL_ORDER.map(k=>`<button class="chip level-chip${selectedLevel===k?" active":""}" data-level="${k}" style="width:100%; text-align:left; padding:12px 14px;">
+        ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}" style="width:100%; text-align:left; padding:12px 14px;">
           <strong>${LEVEL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${LEVEL_DESC[k]}</span>
         </button>`).join("")}
       </div>
 
       <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">Workout erstellen →</button>
       <div id="customWorkoutsSection"></div>
+      ` : `<div class="info-box" style="margin-top:16px">Im Owner-Fremdprofil kannst du Historie einsehen/löschen, aber kein Workout für andere starten.</div>`}
     `;
 
-    document.getElementById("userNameInput").addEventListener("input", e => { updateTrainingUser(e.target.value.trim()); refreshLastWorkoutBox(); renderCustomWorkoutsSection(); });
-    document.querySelectorAll(".profile-chip").forEach(btn => {
-      btn.addEventListener("click", () => {
-        updateTrainingUser(btn.dataset.user);
-        renderTrainingSetup();
+    if (isOwner) {
+      document.querySelectorAll(".profile-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          ownerViewKey = btn.dataset.key;
+          const label = btn.textContent.trim();
+          if (ownerViewKey === uid) {
+            // keep own display name
+          } else {
+            // don't overwrite own trainingUser permanently when peeking
+          }
+          renderTrainingSetup();
+        });
       });
+    }
+
+    document.getElementById("userNameInput")?.addEventListener("input", (e) => {
+      updateTrainingUser(e.target.value.trim());
+      refreshLastWorkoutBox();
+      renderCustomWorkoutsSection();
     });
-    document.querySelectorAll("#trainDurRow .btn-dur").forEach(btn => {
+    document.querySelectorAll("#trainDurRow .btn-dur").forEach((btn) => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll("#trainDurRow .btn-dur").forEach(b=>b.classList.remove("active"));
+        document.querySelectorAll("#trainDurRow .btn-dur").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
-        selectedDuration = parseInt(btn.dataset.min);
+        selectedDuration = parseInt(btn.dataset.min, 10);
       });
     });
-    document.querySelectorAll("#bodyChips .chip").forEach(btn => {
+    document.querySelectorAll("#bodyChips .chip").forEach((btn) => {
       btn.addEventListener("click", () => {
         const k = btn.dataset.body;
         if (selectedBody.has(k)) { selectedBody.delete(k); btn.classList.remove("active"); }
         else { selectedBody.add(k); btn.classList.add("active"); }
       });
     });
-    document.querySelectorAll("#levelChips .chip").forEach(btn => {
+    document.querySelectorAll("#levelChips .chip").forEach((btn) => {
       btn.addEventListener("click", () => {
         selectedLevel = btn.dataset.level;
-        document.querySelectorAll("#levelChips .chip").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll("#levelChips .chip").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
       });
     });
-    document.getElementById("startTrainingBtn").addEventListener("click", () => {
-      if (!trainingUser) { alert("Bitte Namen eingeben."); return; }
+    document.getElementById("startTrainingBtn")?.addEventListener("click", () => {
+      if (!writeKey()) { alert("Bitte zuerst anmelden."); return; }
+      if (!trainingUser) { alert("Bitte Anzeigenamen setzen (Profil)."); return; }
       if (selectedBody.size === 0 || !selectedLevel) { alert("Bitte mindestens einen Körperbereich und ein Level wählen."); return; }
       currentWorkoutQueue = buildWorkout();
       currentExerciseIdx = 0;
       completedBodies = new Set();
       renderWarmup();
     });
-    document.getElementById("viewHistoryBtn").addEventListener("click", () => {
-      if (!trainingUser) { alert("Bitte zuerst einen Namen eingeben."); return; }
-      renderUserHistory(trainingUser);
+    document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
+      const key = readKey();
+      if (!key) { alert("Kein Profil geladen."); return; }
+      renderUserHistory(key);
     });
     refreshLastWorkoutBox();
-    renderCustomWorkoutsSection();
+    if (!viewingOther) renderCustomWorkoutsSection();
   }
 
   async function refreshLastWorkoutBox() {
     const box = document.getElementById("lastWorkoutBox");
     if (!box) return;
-    if (!trainingUser) { box.innerHTML = ""; return; }
-    const lw = await getLastWorkout(trainingUser);
+    const key = readKey();
+    if (!key) { box.innerHTML = ""; return; }
+    const lw = await getLastWorkout(key);
     if (!lw) { box.innerHTML = ""; return; }
-    const dateStr = new Date(lw.date).toLocaleDateString("de-DE", { weekday:"short", day:"2-digit", month:"2-digit" });
-    box.innerHTML = `<div class="info-box" style="margin-top:12px">Letztes Workout (${dateStr}, ${lw.duration} Min, ${lw.exerciseIds.length} Übungen).
-      <button id="repeatWorkoutBtn" class="btn-main btn-dark" style="margin-top:10px">🔁 Gleiches Workout wiederholen</button></div>`;
-    document.getElementById("repeatWorkoutBtn").addEventListener("click", () => {
-      currentWorkoutQueue = lw.exerciseIds.map(id => findExercise(id)).filter(Boolean);
+    const dateStr = new Date(lw.date).toLocaleDateString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit" });
+    const canRepeat = writeKey() && readKey() === writeKey();
+    box.innerHTML = `<div class="info-box" style="margin-top:12px">Letztes Workout (${dateStr}, ${lw.duration} Min, ${(lw.exerciseIds || []).length} Übungen).
+      ${canRepeat ? `<button id="repeatWorkoutBtn" class="btn-main btn-dark" style="margin-top:10px">🔁 Gleiches Workout wiederholen</button>` : ""}</div>`;
+    document.getElementById("repeatWorkoutBtn")?.addEventListener("click", () => {
+      currentWorkoutQueue = (lw.exerciseIds || []).map((id) => findExercise(id)).filter(Boolean);
       if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
       currentExerciseIdx = 0;
       renderTrainingExercise();
@@ -567,42 +725,43 @@ export function createTrainingModule(ctx = {}) {
   async function renderDbOverview() {
     const box = document.getElementById("dbOverviewBox");
     if (!box) return;
-    const snap = await get(allLogsRef());
-    const data = snap.val() || {};
-    const users = Object.keys(data);
-    if (users.length === 0) { box.innerHTML = "Noch keine Trainingsdaten in der Datenbank."; return; }
+    const users = await getAllUsers();
+    if (users.length === 0) {
+      box.innerHTML = "Noch keine Profile/Trainingsdaten sichtbar. (Owner-Rolle in Firebase unter gym/roles setzen, damit alle Keys lesbar sind.)";
+      return;
+    }
 
     let html = `<div style="text-align:left">`;
-    users.forEach(user => {
-      const exercises = data[user] || {};
-      const exCount = Object.keys(exercises).length;
+    for (const u of users) {
+      const history = await getFullUserHistory(u.key);
+      const exCount = Object.keys(history).length;
       let entryCount = 0;
-      Object.values(exercises).forEach(entries => entryCount += Object.keys(entries).length);
+      Object.values(history).forEach((entries) => { entryCount += entries.length; });
       html += `<div class="db-user-row">
-        <div><strong style="color:#cdf94a">${user}</strong> — ${exCount} Übungen, ${entryCount} Einträge insgesamt</div>
+        <div><strong style="color:#cdf94a">${u.label}</strong> <span style="color:#666;font-size:11px">${u.key.slice(0, 10)}…</span> — ${exCount} Übungen, ${entryCount} Einträge</div>
         <div style="margin-top:6px">
-          <button class="btn-main btn-dark db-view-btn" data-user="${user}" style="width:auto;padding:8px 14px;font-size:12px;display:inline-block;margin-right:8px">Details ansehen</button>
-          <button class="btn-main db-del-user-btn" data-user="${user}" style="width:auto;padding:8px 14px;font-size:12px;display:inline-block;background:#3a1414;color:#ff8a8a;border:1px solid #5a1f1f">Alle Daten löschen</button>
+          <button class="btn-main btn-dark db-view-btn" data-key="${u.key}" style="width:auto;padding:8px 14px;font-size:12px;display:inline-block;margin-right:8px">Details ansehen</button>
+          <button class="btn-main db-del-user-btn" data-key="${u.key}" data-label="${u.label}" style="width:auto;padding:8px 14px;font-size:12px;display:inline-block;background:#3a1414;color:#ff8a8a;border:1px solid #5a1f1f">Alle Daten löschen</button>
         </div>
-        <div class="db-detail" id="dbDetail-${user}" style="display:none;margin-top:10px"></div>
+        <div class="db-detail" id="dbDetail-${u.key}" style="display:none;margin-top:10px"></div>
       </div>`;
-    });
+    }
     html += `</div>`;
     box.innerHTML = html;
 
-    document.querySelectorAll(".db-view-btn").forEach(btn => {
+    document.querySelectorAll(".db-view-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const user = btn.dataset.user;
-        const detailDiv = document.getElementById(`dbDetail-${user}`);
+        const key = btn.dataset.key;
+        const detailDiv = document.getElementById(`dbDetail-${key}`);
         if (detailDiv.style.display === "block") { detailDiv.style.display = "none"; return; }
-        const history = await getFullUserHistory(user);
+        const history = await getFullUserHistory(key);
         let detailHTML = "";
         Object.entries(history).forEach(([exId, entries]) => {
           const exName = entries[0]?.exerciseName || exId;
           detailHTML += `<div style="margin-top:8px;padding:8px;background:#0d0d0d;border-radius:8px">
             <div style="color:#ddd;font-size:13px;margin-bottom:4px">${exName}</div>`;
-          entries.slice(0,5).forEach(e => {
-            const d = new Date(e.date).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"2-digit"});
+          entries.slice(0, 5).forEach((e) => {
+            const d = new Date(e.date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit" });
             detailHTML += `<div style="font-size:12px;color:#888">${d}: ${e.weight} kg × ${e.reps} Wdh.</div>`;
           });
           detailHTML += `</div>`;
@@ -612,12 +771,13 @@ export function createTrainingModule(ctx = {}) {
       });
     });
 
-    document.querySelectorAll(".db-del-user-btn").forEach(btn => {
+    document.querySelectorAll(".db-del-user-btn").forEach((btn) => {
       btn.addEventListener("click", async () => {
-        const user = btn.dataset.user;
-        if (!confirm(`Wirklich ALLE Trainingsdaten von "${user}" unwiderruflich löschen?`)) return;
-        await remove(ref(db, `gym/logs/${user}`));
-        await remove(ref(db, `gym/lastWorkout/${user}`));
+        const key = btn.dataset.key;
+        const label = btn.dataset.label || key;
+        if (!confirm(`Wirklich ALLE Trainingsdaten von "${label}" unwiderruflich löschen?`)) return;
+        await remove(ref(db, `gym/logs/${key}`));
+        await remove(ref(db, `gym/lastWorkout/${key}`));
         renderDbOverview();
       });
     });
@@ -830,6 +990,10 @@ export function createTrainingModule(ctx = {}) {
 
   async function renderTrainingExercise() {
     const wrap = document.getElementById("trainingContent");
+    if (!writeKey()) {
+      wrap.innerHTML = requireLoginHtml();
+      return;
+    }
     if (currentExerciseIdx >= currentWorkoutQueue.length) {
       hideWorkoutProgress();
       const bodyList = [...completedBodies];
@@ -982,21 +1146,23 @@ export function createTrainingModule(ctx = {}) {
         logEntry.rackSetting = isNaN(rackVal) ? null : rackVal;
         logEntry.rackLabel = ex.rackLabel || "Rack-Einstellung";
       }
+      const key = writeKey();
+      if (!key) {
+        showToast("Bitte zuerst anmelden, bevor du speicherst.", "error", 3000);
+        return;
+      }
       if (!trainingUser) {
-        showToast("Bitte zuerst deinen Namen oben eintragen, bevor du speicherst.", "error", 3000);
+        showToast("Bitte zuerst deinen Anzeigenamen im Profil setzen.", "error", 3000);
         return;
       }
       try {
-        await push(logRef(trainingUser, ex.id), logEntry);
+        await push(logRef(key, ex.id), logEntry);
         showToast(`Übung gespeichert (${currentSets.length} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
       } catch (err) {
         console.error("Speichern fehlgeschlagen (voller Eintrag):", err, logEntry);
-        // Fallback: Falls die Datenbank-Regeln das erweiterte Format mit der Saetze-Liste ablehnen
-        // (z.B. PERMISSION_DENIED durch strikte Validierungsregeln), versuche es ohne das "sets"-Feld,
-        // damit zumindest Durchschnittsgewicht/-wiederholungen gespeichert werden.
         const { sets, ...fallbackEntry } = logEntry;
         try {
-          await push(logRef(trainingUser, ex.id), fallbackEntry);
+          await push(logRef(key, ex.id), fallbackEntry);
           showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
         } catch (err2) {
           console.error("Speichern fehlgeschlagen (Fallback ohne sets):", err2, fallbackEntry);
@@ -1005,10 +1171,10 @@ export function createTrainingModule(ctx = {}) {
         }
       }
       completedBodies.add(ex.body);
-      await saveLastWorkout(trainingUser, currentWorkoutQueue.slice(0, currentExerciseIdx + 1).map(e=>e.id));
+      await saveLastWorkout(key, currentWorkoutQueue.slice(0, currentExerciseIdx + 1).map(e => e.id));
       currentExerciseIdx++;
       if (currentExerciseIdx >= currentWorkoutQueue.length) {
-        await saveLastWorkout(trainingUser, currentWorkoutQueue.slice(0, currentExerciseIdx).map(e=>e.id));
+        await saveLastWorkout(key, currentWorkoutQueue.slice(0, currentExerciseIdx).map(e => e.id));
         renderTrainingExercise();
       } else {
         await refreshLastWorkoutBox();
@@ -1017,7 +1183,7 @@ export function createTrainingModule(ctx = {}) {
     });
     document.getElementById("skipExBtn").addEventListener("click", () => { currentExerciseIdx++; renderTrainingExercise(); });
 
-    const last = await getLastLog(trainingUser, ex.id);
+    const last = await getLastLog(readKey() || writeKey(), ex.id);
     const reco = computeRecommendation(last, ex);
     document.getElementById("recoNote").innerHTML = reco.note + (reco.weight ? `<br><strong style="color:#cdf94a">Empfehlung: ${reco.weight} kg × ${reco.reps} Wdh.</strong>` : `<br><strong style="color:#cdf94a">Empfehlung: ${reco.reps} Wdh. (Gewicht selbst wählen)</strong>`);
     document.getElementById("logWeight").value = reco.weight || "";
@@ -1058,9 +1224,8 @@ export function createTrainingModule(ctx = {}) {
     buildWorkout,
     logRef,
     lastWorkoutRef,
-    allLogsRef,
+    allLogsRef: logsRootRef,
     getLastLog,
-    getUserHistory,
     getFullUserHistory,
     updateLogEntry,
     deleteLogEntry,

@@ -4,12 +4,12 @@
  */
 import { ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { db } from "./firebase.js";
-import { ensureAuth, watchAuth, completeEmailLinkSignIn, onAuthChange } from "./auth.js";
+import { ensureAuth, watchAuth, onAuthChange, completeEmailLinkSignIn, getAuthSnapshot } from "./auth.js";
 import { initAuthPanel } from "./auth-ui.js";
 import { initTelemetry, trackEvent, trackError, exposeTelemetryGlobal } from "./telemetry.js";
 import { ensureSchemaVersion } from "./services/schema.js";
 import { loadUserRole, isOwnerRole } from "./services/roles.js";
-import { renderGrowthSections, recordWorkoutFeed } from "./growth.js";
+import { renderGrowthSections, recordWorkoutFeed, syncProfileToTrainingUser } from "./growth.js";
 import {
   showToast,
   initTheme,
@@ -17,10 +17,10 @@ import {
   formatTime,
   minutesLeft,
   progressPct,
-  DAYS,
-  DAYS_SHORT
+  DAYS
 } from "./ui.js";
 import { setTrainingUser as persistTrainingUser } from "./state.js";
+import { saveUserProfile } from "./services/users.js";
 import { BODY_LABELS } from "./data.js";
 import { createExercisesModule } from "./exercises.js";
 import { createTrainingModule } from "./training.js";
@@ -57,22 +57,32 @@ function checkinToTrainingDuration(min) {
   return 15;
 }
 
+let profileSyncTimer = null;
+function applyTrainingUser(name, { syncRemoteProfile = false } = {}) {
+  trainingUser = String(name || "").trim();
+  persistTrainingUser(trainingUser);
+  if (!syncRemoteProfile || !trainingUser) return;
+  const snap = getAuthSnapshot();
+  if (!snap.isPermanent || !snap.uid) return;
+  clearTimeout(profileSyncTimer);
+  profileSyncTimer = setTimeout(() => {
+    saveUserProfile({ displayName: trainingUser }, snap.uid).catch((err) => {
+      trackError(err, { source: "app.sync_training_name" });
+    });
+  }, 700);
+}
+
 /* ================= GROWTH / PROFILES ================= */
 
 function growthDeps() {
   return {
     getTrainingUser: () => trainingUser,
-    setTrainingUser: (name) => {
-      trainingUser = String(name || "").trim();
-      persistTrainingUser(trainingUser);
-    },
+    setTrainingUser: (name) => applyTrainingUser(name),
     showToast,
     onProfileSaved: () => {
       trackEvent("profile_saved_ui");
       renderAll();
-    },
-    bodyLabels: BODY_LABELS,
-    daysShort: DAYS_SHORT
+    }
   };
 }
 
@@ -95,12 +105,10 @@ const exercisesModule = createExercisesModule({
 
 const trainingModule = createTrainingModule({
   getTrainingUser: () => trainingUser,
-  setTrainingUser: (name) => {
-    trainingUser = String(name || "").trim();
-    persistTrainingUser(trainingUser);
-  },
+  setTrainingUser: (name) => applyTrainingUser(name, { syncRemoteProfile: true }),
   getGrowthMvpInitialized: () => growthMvpInitialized,
   setGrowthMvpInitialized: (value) => { growthMvpInitialized = !!value; },
+  getIsOwner: () => isOwner,
   recordWorkoutCompletion,
   showToast,
   bodyLabels: BODY_LABELS,
@@ -236,8 +244,7 @@ function attachHomeListeners() {
   document.getElementById("checkinBtn")?.addEventListener("click", () => {
     const raw = document.getElementById("nameInput").value.trim();
     if (raw) {
-      trainingUser = raw;
-      persistTrainingUser(trainingUser);
+      applyTrainingUser(raw, { syncRemoteProfile: true });
     }
     const name = raw || "Jemand";
     checkedInAs = name;
@@ -248,6 +255,11 @@ function attachHomeListeners() {
   });
   document.getElementById("startWorkoutBtn")?.addEventListener("click", () => {
     pendingWorkoutStart = false;
+    const snap = getAuthSnapshot();
+    if (!snap.isPermanent) {
+      showToast("Zum Trainieren bitte zuerst per E-Mail-Link anmelden.", "info", 4500);
+      return;
+    }
     switchTab("training");
   });
   document.getElementById("checkoutBtn")?.addEventListener("click", () => {
@@ -337,6 +349,11 @@ async function boot() {
 
   initAuthPanel({
     showToast,
+    getTrainingUser: () => trainingUser,
+    onLinked: async (linked) => {
+      await syncProfileToTrainingUser(linked.uid, trainingUser, applyTrainingUser);
+      renderAll();
+    },
     onAuthUiChange: (snap) => {
       trackEvent("auth_ui_state", {
         permanent: !!snap.isPermanent,
@@ -351,19 +368,28 @@ async function boot() {
 
   try {
     await ensureAuth();
+
     try {
       const linked = await completeEmailLinkSignIn();
       if (linked?.isPermanent) {
-        showToast("Konto verknüpft – willkommen zurück.", "success", 4000);
+        await syncProfileToTrainingUser(linked.uid, trainingUser, applyTrainingUser);
+        showToast("Konto verknüpft — Trainingsprofil geladen.", "success", 4000);
       }
     } catch (err) {
       trackError(err, { source: "boot.email_link" });
-      showToast(err?.message || "E-Mail-Link Anmeldung fehlgeschlagen.", "error", 5000);
+      if (err?.code === "auth/email-required-for-link") {
+        showToast("Anmelde-Link erkannt — bitte E-Mail im Konto-Feld bestätigen.", "info", 5000);
+      } else {
+        showToast(err?.message || "E-Mail-Link Anmeldung fehlgeschlagen.", "error", 5000);
+      }
     }
 
     watchAuth();
-    onAuthChange(async (snap) => {
-      await syncRoleFromAuth(snap.uid);
+    onAuthChange(async (authSnap) => {
+      if (authSnap.uid) {
+        await syncProfileToTrainingUser(authSnap.uid, trainingUser, applyTrainingUser);
+      }
+      await syncRoleFromAuth(authSnap.uid);
       if (!shouldSkipGrowthMvpRefresh()) renderGrowthMvpSections();
     });
 
@@ -371,7 +397,7 @@ async function boot() {
     trackEvent("boot_ready");
   } catch (err) {
     trackError(err, { source: "boot.auth" });
-    showToast("Anmeldung fehlgeschlagen – App läuft eingeschränkt.", "error", 5000);
+    showToast(err?.message || "Anmeldung fehlgeschlagen – App läuft eingeschränkt.", "error", 5000);
   }
 
   onValue(statusRef, (snap) => {

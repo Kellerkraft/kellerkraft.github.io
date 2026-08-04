@@ -358,6 +358,15 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
   font-weight: 500;
   word-break: break-all;
 }
+.auth-training-name {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.auth-training-name strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .auth-hint {
   margin-top: 2px;
   line-height: 1.45;
@@ -378,13 +387,57 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
   margin-bottom: 10px;
 }
 .mvp-grid { display: grid; grid-template-columns: 2fr 1fr; gap: var(--space-2); margin-bottom: var(--space-2); }
-.mvp-plan-row {
-  display: grid;
-  grid-template-columns: 70px 1fr 1fr 48px;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+.mvp-award {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  background: var(--bg-elevated);
 }
-.mvp-plan-row .btn-main { min-height: 48px; padding: 0; }
+.mvp-award--earned {
+  border-color: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mvp-award-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  color: #0a0a0a;
+  font-size: 26px;
+  font-weight: 700;
+}
+.mvp-award-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 24px;
+  letter-spacing: 1px;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.mvp-award-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.mvp-award-bar {
+  margin-top: 12px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.mvp-award-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
 .mvp-streak {
   font-size: 18px;
   color: var(--text);
@@ -559,7 +612,6 @@ html[data-theme="light"] .body-icon-img {
   .ex-table { font-size: 11px; }
   .big-label { font-size: 32px; }
   .mvp-grid { grid-template-columns: 1fr; }
-  .mvp-plan-row { grid-template-columns: 1fr; }
 }
 
 
