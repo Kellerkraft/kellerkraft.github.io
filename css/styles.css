@@ -572,6 +572,60 @@ html[data-theme="light"] .body-icon-img {
 .faq-item.open .faq-answer { max-height: none; }
 .faq-answer-inner { padding: 0 16px 16px; }
 .faq-answer-inner ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+
+.workout-order-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workout-order-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+.workout-order-label {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.workout-order-num {
+  color: var(--text-dim);
+  margin-right: 4px;
+}
+.workout-order-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.workout-order-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.workout-order-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.workout-order-btn:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .faq-answer-inner li { font-size: 13px; color: #bbb; line-height: 1.6; padding-left: 14px; position: relative; }
 .faq-answer-inner li::before { content: "\2013"; position: absolute; left: 0; color: #555; }
 .faq-answer-inner li.sub-item { padding-left: 28px; color: #999; }
