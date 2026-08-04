@@ -707,24 +707,29 @@ export function createTrainingModule(ctx = {}) {
       <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
 
       ${!viewingOther ? `
-      <div class="section-title" style="margin-top:20px">Dauer</div>
+      <div class="section-title" style="margin-top:24px">AI Workout Generator</div>
+      <div class="info-box" style="margin-bottom:14px">
+        Erstellt ein <strong>AI-optimiertes Workout</strong> je nach Trainingsbereich, Dauer und Erfahrungslevel.
+      </div>
+
+      <div class="section-title" style="margin-top:12px">Dauer</div>
       <div class="dur-row" id="trainDurRow">
         ${[15, 30, 45, 60].map((m) => `<button class="btn-dur${m === selectedDuration ? " active" : ""}" data-min="${m}">${m} min</button>`).join("")}
       </div>
 
-      <div class="section-title" style="margin-top:20px">Körperbereich</div>
+      <div class="section-title" style="margin-top:20px">Trainingsbereich</div>
       <div class="chip-row" id="bodyChips">
         ${Object.entries(BODY_LABELS).map(([k, l]) => `<button class="chip${selectedBody.has(k) ? " active" : ""}" data-body="${k}">${l}</button>`).join("")}
       </div>
 
-      <div class="section-title" style="margin-top:20px">Level</div>
+      <div class="section-title" style="margin-top:20px">Erfahrungslevel</div>
       <div class="chip-row" id="levelChips" style="flex-direction:column; gap:8px; display:flex;">
         ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}" style="width:100%; text-align:left; padding:12px 14px;">
           <strong>${LEVEL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${LEVEL_DESC[k]}</span>
         </button>`).join("")}
       </div>
 
-      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">Workout erstellen →</button>
+      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">AI Workout generieren →</button>
       <div id="customWorkoutsSection"></div>
       ` : `<div class="info-box" style="margin-top:16px">Im Owner-Fremdprofil kannst du Historie einsehen/löschen, aber kein Workout für andere starten.</div>`}
     `;
@@ -773,7 +778,7 @@ export function createTrainingModule(ctx = {}) {
     document.getElementById("startTrainingBtn")?.addEventListener("click", () => {
       if (!writeKey()) { alert("Bitte zuerst anmelden."); return; }
       if (!trainingUser) { alert("Bitte Anzeigenamen setzen (Profil)."); return; }
-      if (selectedBody.size === 0 || !selectedLevel) { alert("Bitte mindestens einen Körperbereich und ein Level wählen."); return; }
+      if (selectedBody.size === 0 || !selectedLevel) { alert("Bitte mindestens einen Trainingsbereich und ein Erfahrungslevel wählen."); return; }
       currentWorkoutQueue = buildWorkout();
       currentExerciseIdx = 0;
       completedBodies = new Set();
@@ -1096,7 +1101,7 @@ export function createTrainingModule(ctx = {}) {
           ${renderMuscleSVG(bodyList)}
           ${bodyNamesHTML}
         </div>
-        <button id="restartTrainingBtn" class="btn-main btn-dark" style="margin-top:16px">Neues Workout erstellen</button>`;
+        <button id="restartTrainingBtn" class="btn-main btn-dark" style="margin-top:16px">Neues AI Workout generieren</button>`;
       document.getElementById("restartTrainingBtn").addEventListener("click", renderTrainingSetup);
       return;
     }
