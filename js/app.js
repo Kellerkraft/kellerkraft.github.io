@@ -564,7 +564,7 @@ function renderReservePage() {
 
 /* ================= ÜBUNGSDATENBANK ================= */
 
-import { EXERCISE_INSTRUCTIONS, EXERCISES, BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC } from "./data.js";
+import { EXERCISE_INSTRUCTIONS, EXERCISES, EXERCISE_MEDIA, BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC } from "./data.js";
 
 function levelsUpTo(level) {
   const idx = LEVEL_ORDER.indexOf(level);
@@ -596,7 +596,8 @@ async function loadCustomExercises() {
           note: val.note || null,
           rackSetting: !!val.rackSetting,
           rackLabel: val.rackLabel || null,
-          custom: true
+          custom: true,
+          media: val.media || null
         };
       }
     });
@@ -641,6 +642,8 @@ async function saveCustomExercise(ex) {
       steps: ex.steps || [],
       note: ex.note || null
     };
+    if (ex.media) payload.media = ex.media;
+    else if (ex.media === null) payload.media = null;
     await set(exerciseOverrideRef(ex.id), payload);
     customExercises[ex.id] = { id: ex.id, ...payload };
     showToast("Übung hinzugefügt.", "success", 2000);
@@ -673,13 +676,90 @@ function findExercise(id) {
   return getAllExercises().find(e => e.id === id) || null;
 }
 
+function getExerciseMedia(ex, overrides = {}) {
+  const o = overrides[ex.id] || {};
+  if (o.media && o.media.url) return o.media;
+  if (EXERCISE_MEDIA[ex.id]) return EXERCISE_MEDIA[ex.id];
+  return { type: "auto", url: `./assets/exercises/${ex.id}` };
+}
+
+function youtubeEmbedId(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes("youtu.be")) return u.pathname.slice(1).split("/")[0];
+    if (u.pathname.startsWith("/shorts/")) return u.pathname.split("/")[2];
+    return u.searchParams.get("v");
+  } catch {
+    return null;
+  }
+}
+
+function renderExerciseMediaHtml(ex, overrides = {}, { compact = false } = {}) {
+  const media = getExerciseMedia(ex, overrides);
+  if (!media) return "";
+  const vCls = compact ? "exercise-media-video exercise-media-video--compact" : "exercise-media-video";
+  const iCls = compact ? "exercise-media-gif exercise-media-video--compact" : "exercise-media-gif";
+  if (media.type === "youtube") {
+    const vid = youtubeEmbedId(media.url);
+    if (!vid) return "";
+    return `<div class="exercise-media-yt"><iframe src="https://www.youtube-nocookie.com/embed/${vid}?rel=0" title="${escapeAttr(ex.name)}" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
+  }
+  if (media.type === "gif") {
+    return `<img class="${iCls}" src="${escapeAttr(media.url)}" alt="Demo: ${escapeAttr(ex.name)}" loading="lazy">`;
+  }
+  if (media.type === "mp4" || media.type === "video") {
+    return `<video class="${vCls}" src="${escapeAttr(media.url)}" loop muted playsinline autoplay preload="metadata"></video>`;
+  }
+  // auto: versuche .mp4, dann .gif – nur anzeigen wenn Datei existiert
+  const base = escapeAttr(media.url);
+  return `<span class="exercise-media--auto" data-exid="${escapeAttr(ex.id)}" hidden>
+    <video class="${vCls}" src="${base}.mp4" loop muted playsinline autoplay preload="metadata"></video>
+    <img class="exercise-media-gif" src="${base}.gif" alt="Demo: ${escapeAttr(ex.name)}" loading="lazy" hidden>
+  </span>`;
+}
+
+function initExerciseMediaFallbacks(root = document) {
+  root.querySelectorAll(".exercise-media--auto").forEach(wrap => {
+    const video = wrap.querySelector(".exercise-media-video");
+    const img = wrap.querySelector(".exercise-media-gif");
+
+    function insertMedia(el) {
+      wrap.replaceWith(el);
+    }
+
+    if (video) {
+      video.addEventListener("loadeddata", () => insertMedia(video));
+      video.addEventListener("error", () => {
+        if (img) {
+          img.addEventListener("load", () => insertMedia(img), { once: true });
+          img.addEventListener("error", () => wrap.remove(), { once: true });
+        } else {
+          wrap.remove();
+        }
+      });
+    } else if (img) {
+      img.addEventListener("load", () => insertMedia(img), { once: true });
+      img.addEventListener("error", () => wrap.remove(), { once: true });
+    } else {
+      wrap.remove();
+    }
+  });
+
+  root.querySelectorAll(".exercise-media-video, .exercise-media-gif, .exercise-media-img").forEach(el => {
+    if (el.closest(".exercise-media--auto")) return;
+    el.addEventListener("error", () => el.remove());
+  });
+}
+
 function getExerciseDisplay(ex, overrides) {
   const o = overrides[ex.id] || {};
   const baseInstr = EXERCISE_INSTRUCTIONS[ex.id] || { steps: ex.steps || [], note: ex.note || null };
   return {
     name: o.name || ex.name,
     steps: o.steps || baseInstr.steps || [],
-    note: (o.note !== undefined) ? o.note : baseInstr.note
+    note: (o.note !== undefined) ? o.note : baseInstr.note,
+    media: getExerciseMedia(ex, overrides)
   };
 }
 
@@ -751,6 +831,7 @@ async function renderUebungenPage() {
           <div class="faq-item" data-exid="${ex.id}">
             <button class="faq-question">${d.name}${isCustom ? ' <span class="detail-tag">eigen</span>' : ""} <span class="faq-chevron">▾</span></button>
             <div class="faq-answer"><div class="faq-answer-inner">
+              ${renderExerciseMediaHtml(ex, overrides)}
               <ul>
                 ${d.steps.map(s => `<li>${s}</li>`).join("")}
               </ul>
@@ -863,12 +944,21 @@ async function renderUebungenPage() {
       const ex = findExercise(exId);
       if (!ex) return;
       const d = getExerciseDisplay(ex, overrides);
+      const savedMedia = overrides[exId]?.media;
       const form = document.getElementById(`editForm-${exId}`);
       const isOpen = form.style.display !== "none";
       if (isOpen) { form.style.display = "none"; form.innerHTML = ""; return; }
       form.style.display = "block";
       form.innerHTML = `
         <input class="name-input" id="editName-${exId}" placeholder="Name" value="${escapeAttr(d.name)}">
+        <div class="field-label" style="margin-top:8px">Demo-Video / GIF (optional)</div>
+        <select class="time-input" id="editMediaType-${exId}" style="margin-bottom:6px">
+          <option value=""${!savedMedia ? " selected" : ""}>Automatisch (assets/exercises/${exId}.mp4/.gif)</option>
+          <option value="mp4"${savedMedia?.type === "mp4" || savedMedia?.type === "video" ? " selected" : ""}>Video (.mp4)</option>
+          <option value="gif"${savedMedia?.type === "gif" ? " selected" : ""}>GIF</option>
+          <option value="youtube"${savedMedia?.type === "youtube" ? " selected" : ""}>YouTube</option>
+        </select>
+        <input class="name-input" id="editMediaUrl-${exId}" placeholder="URL oder Pfad, z.B. ./assets/exercises/${exId}.mp4" value="${escapeAttr(savedMedia?.url || "")}">
         <textarea class="name-input" id="editSteps-${exId}" rows="5" style="margin-top:8px; resize:vertical;" placeholder="Ein Schritt pro Zeile">${d.steps.join("\n")}</textarea>
         <input class="name-input" id="editNote-${exId}" style="margin-top:8px;" placeholder="Hinweis (optional)" value="${escapeAttr(d.note || "")}">
         <button class="btn-main btn-lime save-exercise-edit-btn" data-exid="${exId}" style="width:100%; margin-top:10px;">💾 Speichern</button>
@@ -877,18 +967,25 @@ async function renderUebungenPage() {
         const name = document.getElementById(`editName-${exId}`).value.trim();
         const stepsRaw = document.getElementById(`editSteps-${exId}`).value;
         const note = document.getElementById(`editNote-${exId}`).value.trim();
+        const mediaType = document.getElementById(`editMediaType-${exId}`).value;
+        const mediaUrl = document.getElementById(`editMediaUrl-${exId}`).value.trim();
         const steps = stepsRaw.split("\n").map(s => s.trim()).filter(Boolean);
         if (!name || steps.length === 0) { alert("Bitte Name und mindestens einen Schritt angeben."); return; }
+        const payload = { name, steps, note: note || null };
+        if (mediaType && mediaUrl) payload.media = { type: mediaType, url: mediaUrl };
+        else if (overrides[exId]?.media) payload.media = null;
         if (customExercises[exId]) {
-          const updated = { ...customExercises[exId], name, steps, note: note || null };
+          const updated = { ...customExercises[exId], ...payload };
           await saveCustomExercise(updated);
         } else {
-          await saveExerciseOverride(exId, { name, steps, note: note || null });
+          await saveExerciseOverride(exId, payload);
         }
         renderUebungenPage();
       });
     });
   });
+
+  initExerciseMediaFallbacks(wrap);
 }
 
 let selectedBody = new Set();
@@ -1580,7 +1677,9 @@ async function renderTrainingExercise() {
     return;
   }
   const ex = currentWorkoutQueue[currentExerciseIdx];
-  const display = getExerciseDisplay(ex, {});
+  const overrides = await getExerciseOverrides();
+  const display = getExerciseDisplay(ex, overrides);
+  const mediaHTML = renderExerciseMediaHtml(ex, overrides, { compact: true });
   const instrHTML = display.steps.length ? `
       <button id="toggleInstrBtn" class="btn-main btn-dark" style="margin-top:10px;margin-bottom:0">📋 Anleitung anzeigen</button>
       <div id="instrBox" style="display:none;margin-top:10px;padding:12px;background:#0d0d0d;border-radius:8px">
@@ -1597,6 +1696,7 @@ async function renderTrainingExercise() {
   wrap.innerHTML = `<div class="section-title">Übung ${currentExerciseIdx+1}/${currentWorkoutQueue.length}</div>
     <div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
       <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${display.name}</div>
+      ${mediaHTML}
       <div class="sub" id="recoNote" style="color:#999;margin-bottom:14px">Lade letzten Wert…</div>
       <div class="field-label" style="margin-bottom:6px">Sätze</div>
       <div id="setsList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
@@ -1619,7 +1719,7 @@ async function renderTrainingExercise() {
       <button id="skipExBtn" class="btn-main btn-dark" style="margin-top:8px">Übung überspringen</button>
     </div>`;
 
-  if (instr) {
+  if (instrHTML) {
     document.getElementById("toggleInstrBtn").addEventListener("click", () => {
       const box = document.getElementById("instrBox");
       const btn = document.getElementById("toggleInstrBtn");
@@ -1628,6 +1728,8 @@ async function renderTrainingExercise() {
       btn.textContent = isHidden ? "📋 Anleitung ausblenden" : "📋 Anleitung anzeigen";
     });
   }
+
+  initExerciseMediaFallbacks(wrap);
 
   currentSets = [];
 

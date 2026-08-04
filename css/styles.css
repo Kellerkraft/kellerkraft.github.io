@@ -228,6 +228,15 @@ body {
 .faq-note { font-size: 12px; color: #ccc; margin-top: 8px; padding: 10px 12px; background: #1a1a05; border-radius: 6px; border-left: 2px solid #4a3c00; line-height: 1.5; }
 .faq-tip { font-size: 12px; color: #aee87a; margin-top: 8px; padding: 10px 12px; background: #10160a; border-radius: 6px; border-left: 2px solid #3a5a15; line-height: 1.5; }
 
+.exercise-media-video, .exercise-media-gif, .exercise-media-img {
+  display: block; width: 100%; height: auto; max-height: 280px;
+  margin: 0 0 14px; border-radius: 10px; object-fit: cover;
+}
+.exercise-media-video--compact, .exercise-media-gif.exercise-media-video--compact { max-height: 220px; margin-bottom: 12px; }
+.exercise-media-yt { position: relative; width: 100%; padding-bottom: 56.25%; margin: 0 0 14px; border-radius: 10px; overflow: hidden; }
+.exercise-media-yt iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.exercise-media--auto[hidden] { display: none !important; }
+
 .ex-table-wrap { overflow-x: auto; margin-top: 4px; }
 .ex-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
 .ex-table thead tr { border-bottom: 1px solid #2a2a2a; }

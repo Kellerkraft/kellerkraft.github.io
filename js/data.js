@@ -251,6 +251,13 @@ export const EXERCISE_INSTRUCTIONS = {
   }
 };
 
+// Optionale Demo-Videos/GIFs pro Übung.
+// Dateien unter assets/exercises/{id}.mp4 oder .gif ablegen – werden automatisch erkannt.
+// Oder hier explizit eintragen, z.B.:
+//   latpulldown: { type: "mp4", url: "./assets/exercises/latpulldown.mp4" }
+//   pullup: { type: "youtube", url: "https://youtu.be/xxxxx" }
+export const EXERCISE_MEDIA = {};
+
 export const EXERCISES = [
   { id:"squat", name:"Bodyweight Squat", body:"beine", equip:["koerper"], level:"easy", defMin:12, defMax:20 },
   { id:"backsquat", name:"Barbell Back Squat", body:"beine", equip:["langhantel","rack"], level:"advanced", defMin:6, defMax:10, rackSetting:true, rackLabel:"J-Hooks & Safety Arms Stufe" },
