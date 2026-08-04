@@ -626,6 +626,45 @@ html[data-theme="light"] .body-icon-img {
   border-color: var(--accent);
   color: var(--accent);
 }
+
+.rest-next-card {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  text-align: left;
+}
+.rest-next-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.rest-next-body {
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.rest-next-name {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 28px;
+  letter-spacing: 1px;
+  color: var(--text);
+  line-height: 1.15;
+  margin-bottom: 8px;
+}
+.rest-next-hint {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-info);
+  border: 1px solid var(--border);
+}
+
 .faq-answer-inner li { font-size: 13px; color: #bbb; line-height: 1.6; padding-left: 14px; position: relative; }
 .faq-answer-inner li::before { content: "\2013"; position: absolute; left: 0; color: #555; }
 .faq-answer-inner li.sub-item { padding-left: 28px; color: #999; }

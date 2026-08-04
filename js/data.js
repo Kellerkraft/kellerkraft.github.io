@@ -259,41 +259,41 @@ export const EXERCISE_INSTRUCTIONS = {
 export const EXERCISE_MEDIA = {};
 
 export const EXERCISES = [
-  { id:"squat", name:"Bodyweight Squat", body:"beine", equip:["koerper"], level:"easy", defMin:12, defMax:20 },
-  { id:"backsquat", name:"Barbell Back Squat", body:"beine", equip:["langhantel","rack"], level:"advanced", defMin:6, defMax:10, rackSetting:true, rackLabel:"J-Hooks & Safety Arms Stufe" },
-  { id:"rdl", name:"Romanian Deadlift", body:"beine", equip:["langhantel"], level:"advanced", defMin:8, defMax:12 },
-  { id:"nordic", name:"Nordic Curls", body:"beine", equip:["rack"], level:"advanced", defMin:4, defMax:8 },
-  { id:"kickback", name:"Kabel-Kickback", body:"beine", equip:["kabel"], level:"mid", defMin:12, defMax:15 },
-  { id:"legextensioncable", name:"Leg Extension sitzend (Kabelzug)", body:"beine", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
-  { id:"legcurlcable", name:"Leg Curl stehend (Kabelzug)", body:"beine", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
-  { id:"declinesitup", name:"Decline Sit-ups", body:"bauch", equip:["abback"], level:"easy", defMin:12, defMax:20 },
-  { id:"weightedsitup", name:"Weighted Sit-up", body:"bauch", equip:["abback","kurzhantel"], level:"easy", defMin:10, defMax:15 },
-  { id:"hanginglegraise", name:"Hanging Leg Raise", body:"bauch", equip:["rack"], level:"mid", defMin:8, defMax:15 },
-  { id:"cablecrunch", name:"Cable Crunch (kniend)", body:"bauch", equip:["kabel"], level:"mid", defMin:12, defMax:20 },
-  { id:"pallof", name:"Pallof Press", body:"bauch", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
-  { id:"hyperext", name:"Hyperextensions", body:"ruecken", equip:["abback"], level:"easy", defMin:10, defMax:15 },
-  { id:"latpulldown", name:"Lat Pulldown", body:"ruecken", equip:["kabel"], level:"easy", defMin:8, defMax:12 },
-  { id:"cablerow", name:"Cable Row (sitzend)", body:"ruecken", equip:["kabel"], level:"easy", defMin:8, defMax:12 },
-  { id:"khrudern", name:"Kurzhantel-Rudern", body:"ruecken", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12 },
-  { id:"pullup", name:"Pull-Up / Chin-Up", body:"ruecken", equip:["rack"], level:"advanced", defMin:4, defMax:10 },
-  { id:"bbrow", name:"Barbell Bent Over Row", body:"ruecken", equip:["langhantel"], level:"advanced", defMin:6, defMax:10 },
-  { id:"deadlift", name:"Deadlift", body:"ruecken", equip:["langhantel"], level:"advanced", defMin:5, defMax:8 },
-  { id:"khcurl", name:"Kurzhantel-Bizeps-Curl", body:"arme", equip:["kurzhantel"], level:"easy", defMin:10, defMax:15 },
-  { id:"dgriffcurl", name:"D-Griff Bizeps-Curl", body:"arme", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
-  { id:"pushdown", name:"Trizeps-Pushdown", body:"arme", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
-  { id:"schulterdruecken", name:"Kurzhantel-Schulterdrücken", body:"arme", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12 },
-  { id:"facepull", name:"Face Pull", body:"arme", equip:["kabel"], level:"mid", defMin:12, defMax:15 },
-  { id:"ohp", name:"Barbell Overhead Press", body:"arme", equip:["langhantel"], level:"advanced", defMin:6, defMax:10, rackSetting:true, rackLabel:"J-Hooks Stufe" },
-  { id:"jammerarme", name:"Jammer Arme", body:"arme", equip:["jammer"], level:"mid", defMin:10, defMax:15, rackSetting:true, rackLabel:"Jammer Arme Höhe" },
-  { id:"jammerbrust", name:"Brustpresse (Jammer Arme)", body:"brust", equip:["jammer"], level:"mid", defMin:8, defMax:12, rackSetting:true, rackLabel:"Jammer Arme Höhe (niedrig)" },
-  { id:"jammerschulter", name:"Schulterdrücken (Jammer Arme)", body:"arme", equip:["jammer"], level:"mid", defMin:8, defMax:12, rackSetting:true, rackLabel:"Jammer Arme Höhe (hoch/Schulterhöhe)" },
-  { id:"jammerinclinebrust", name:"Incline Brustpresse (Jammer Arme)", body:"brust", equip:["jammer"], level:"mid", defMin:8, defMax:12, rackSetting:true, rackLabel:"Jammer Arme Höhe (mittel)" },
-  { id:"khbankdruecken", name:"Kurzhantel-Bankdrücken", body:"brust", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12 },
-  { id:"khflyes", name:"Kurzhantel-Flyes", body:"brust", equip:["kurzhantel"], level:"easy", defMin:10, defMax:15 },
-  { id:"cablechestpress", name:"Cable Chest Press", body:"brust", equip:["kabel"], level:"mid", defMin:10, defMax:15 },
-  { id:"benchpress", name:"Barbell Bench Press", body:"brust", equip:["langhantel"], level:"advanced", defMin:5, defMax:8, rackSetting:true, rackLabel:"J-Hooks & Safety Arms Stufe" },
-  { id:"inclinebench", name:"Incline Bench Press (KH)", body:"brust", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12 },
-  { id:"pullover", name:"Dumbbell Pullover", body:"brust", equip:["kurzhantel"], level:"easy", defMin:10, defMax:15 },
+  { id:"squat", name:"Bodyweight Squat", body:"beine", equip:["koerper"], level:"easy", defMin:12, defMax:20, pattern:"compound", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"backsquat", name:"Barbell Back Squat", body:"beine", equip:["langhantel","rack"], level:"advanced", defMin:6, defMax:10, rackSetting:true, rackLabel:"J-Hooks & Safety Arms Stufe", pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"rdl", name:"Romanian Deadlift", body:"beine", equip:["langhantel"], level:"advanced", defMin:8, defMax:12, pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"nordic", name:"Nordic Curls", body:"beine", equip:["rack"], level:"advanced", defMin:4, defMax:8, pattern:"isolation", goalBias:["kraft","muskelaufbau"] },
+  { id:"kickback", name:"Kabel-Kickback", body:"beine", equip:["kabel"], level:"mid", defMin:12, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"legextensioncable", name:"Leg Extension sitzend (Kabelzug)", body:"beine", equip:["kabel"], level:"mid", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"legcurlcable", name:"Leg Curl stehend (Kabelzug)", body:"beine", equip:["kabel"], level:"mid", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"declinesitup", name:"Decline Sit-ups", body:"bauch", equip:["abback"], level:"easy", defMin:12, defMax:20, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"weightedsitup", name:"Weighted Sit-up", body:"bauch", equip:["abback","kurzhantel"], level:"easy", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"hanginglegraise", name:"Hanging Leg Raise", body:"bauch", equip:["rack"], level:"mid", defMin:8, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"cablecrunch", name:"Cable Crunch (kniend)", body:"bauch", equip:["kabel"], level:"mid", defMin:12, defMax:20, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"pallof", name:"Pallof Press", body:"bauch", equip:["kabel"], level:"mid", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"hyperext", name:"Hyperextensions", body:"ruecken", equip:["abback"], level:"easy", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"latpulldown", name:"Lat Pulldown", body:"ruecken", equip:["kabel"], level:"easy", defMin:8, defMax:12, pattern:"compound", goalBias:["kraft","muskelaufbau","abnehmen"] },
+  { id:"cablerow", name:"Cable Row (sitzend)", body:"ruecken", equip:["kabel"], level:"easy", defMin:8, defMax:12, pattern:"compound", goalBias:["kraft","muskelaufbau","abnehmen"] },
+  { id:"khrudern", name:"Kurzhantel-Rudern", body:"ruecken", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12, pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"pullup", name:"Pull-Up / Chin-Up", body:"ruecken", equip:["rack"], level:"advanced", defMin:4, defMax:10, pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"bbrow", name:"Barbell Bent Over Row", body:"ruecken", equip:["langhantel"], level:"advanced", defMin:6, defMax:10, pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"deadlift", name:"Deadlift", body:"ruecken", equip:["langhantel"], level:"advanced", defMin:5, defMax:8, pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"khcurl", name:"Kurzhantel-Bizeps-Curl", body:"arme", equip:["kurzhantel"], level:"easy", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"dgriffcurl", name:"D-Griff Bizeps-Curl", body:"arme", equip:["kabel"], level:"mid", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"pushdown", name:"Trizeps-Pushdown", body:"arme", equip:["kabel"], level:"mid", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"schulterdruecken", name:"Kurzhantel-Schulterdrücken", body:"arme", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12, pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"facepull", name:"Face Pull", body:"arme", equip:["kabel"], level:"mid", defMin:12, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"ohp", name:"Barbell Overhead Press", body:"arme", equip:["langhantel"], level:"advanced", defMin:6, defMax:10, rackSetting:true, rackLabel:"J-Hooks Stufe", pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"jammerarme", name:"Jammer Arme", body:"arme", equip:["jammer"], level:"mid", defMin:10, defMax:15, rackSetting:true, rackLabel:"Jammer Arme Höhe", pattern:"compound", goalBias:["kraft","muskelaufbau","abnehmen"] },
+  { id:"jammerbrust", name:"Brustpresse (Jammer Arme)", body:"brust", equip:["jammer"], level:"mid", defMin:8, defMax:12, rackSetting:true, rackLabel:"Jammer Arme Höhe (niedrig)", pattern:"compound", goalBias:["kraft","muskelaufbau","abnehmen"] },
+  { id:"jammerschulter", name:"Schulterdrücken (Jammer Arme)", body:"arme", equip:["jammer"], level:"mid", defMin:8, defMax:12, rackSetting:true, rackLabel:"Jammer Arme Höhe (hoch/Schulterhöhe)", pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"jammerinclinebrust", name:"Incline Brustpresse (Jammer Arme)", body:"brust", equip:["jammer"], level:"mid", defMin:8, defMax:12, rackSetting:true, rackLabel:"Jammer Arme Höhe (mittel)", pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"khbankdruecken", name:"Kurzhantel-Bankdrücken", body:"brust", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12, pattern:"compound", goalBias:["kraft","muskelaufbau","abnehmen"] },
+  { id:"khflyes", name:"Kurzhantel-Flyes", body:"brust", equip:["kurzhantel"], level:"easy", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"cablechestpress", name:"Cable Chest Press", body:"brust", equip:["kabel"], level:"mid", defMin:10, defMax:15, pattern:"compound", goalBias:["muskelaufbau","abnehmen"] },
+  { id:"benchpress", name:"Barbell Bench Press", body:"brust", equip:["langhantel"], level:"advanced", defMin:5, defMax:8, rackSetting:true, rackLabel:"J-Hooks & Safety Arms Stufe", pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"inclinebench", name:"Incline Bench Press (KH)", body:"brust", equip:["kurzhantel"], level:"easy", defMin:8, defMax:12, pattern:"compound", goalBias:["kraft","muskelaufbau"] },
+  { id:"pullover", name:"Dumbbell Pullover", body:"brust", equip:["kurzhantel"], level:"easy", defMin:10, defMax:15, pattern:"isolation", goalBias:["muskelaufbau","abnehmen"] },
 ];
 
 export const BODY_LABELS = { beine:"Beine & Po", bauch:"Bauch & Core", ruecken:"Rücken & Lat", arme:"Arme & Schultern", brust:"Brust" };
@@ -304,3 +304,25 @@ export const LEVEL_DESC = {
   mid:"+ alle Kabelzug-Übungen, Jammer Arme, hängende Übungen an der Klimmzugstange",
   advanced:"+ Langhantel &amp; freies Rack (Kniebeuge, Kreuzheben, Pull-Up)"
 };
+
+/** Trainingsziele für den AI Workout Generator */
+export const GOAL_ORDER = ["muskelaufbau", "kraft", "abnehmen"];
+export const GOAL_LABELS = {
+  muskelaufbau: "Muskelaufbau",
+  kraft: "Kraft",
+  abnehmen: "Abnehmen / Fitness"
+};
+export const GOAL_DESC = {
+  muskelaufbau: "Mehr Volumen, Mix aus Grund- und Isolationsübungen",
+  kraft: "Grundübungen, niedrigere Wiederholungszahlen",
+  abnehmen: "Mehr Bewegung, höhere Wiederholungen, Cardio-freundlich"
+};
+
+/** Optionale Cardio-Finisher (nicht Teil der Kraft-Übungsliste) */
+export const CARDIO_OPTIONS = [
+  { id: "laufband", label: "Laufband", minutes: { kraft: 8, muskelaufbau: 10, abnehmen: 15 } },
+  { id: "joggen", label: "Joggen (draußen)", minutes: { kraft: 10, muskelaufbau: 12, abnehmen: 20 } },
+  { id: "gehen", label: "Gehen", minutes: { kraft: 10, muskelaufbau: 12, abnehmen: 20 } },
+  { id: "rad", label: "Rad", minutes: { kraft: 10, muskelaufbau: 12, abnehmen: 20 } },
+  { id: "schwimmen", label: "Schwimmen", minutes: { kraft: 10, muskelaufbau: 15, abnehmen: 20 } }
+];
