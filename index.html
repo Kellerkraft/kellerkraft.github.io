@@ -20,7 +20,7 @@
 <link rel="icon" type="image/png" sizes="32x32" href="./assets/icon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="./assets/icon-16x16.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <link rel="stylesheet" href="./css/styles.css">
 <script type="module" src="./js/app.js"></script>
@@ -31,27 +31,19 @@
 <div id="toastWrap"></div>
 
 <header class="app-header">
-  <div style="display:flex;align-items:center;gap:10px">
-    <img src="./assets/icon-32x32.png" alt="Logo" class="app-logo">
-    <div>
-      <div class="eyebrow">Keller Gym</div>
-      <div id="navLabel">Status &amp; Check-in</div>
+  <div class="app-brand">
+    <img src="./assets/icon-192x192.png" alt="" class="app-logo">
+    <div class="app-brand-text">
+      <span class="app-wordmark">Keller Gym</span>
+      <h1 id="navLabel">Übersicht</h1>
     </div>
   </div>
-  <div style="display:flex;align-items:center">
-    <button id="themeToggleBtn" class="theme-toggle-btn" aria-label="Darstellung umschalten" title="Hell/Dunkel umschalten">🌙</button>
-    <button id="navToggle" aria-label="Menü"><span></span><span></span><span></span></button>
-  </div>
+  <button id="themeToggleBtn" class="theme-toggle-btn" aria-label="Darstellung umschalten" title="Hell/Dunkel umschalten">🌙</button>
 </header>
 
-<div id="navmenu">
-  <div class="navmenu-panel">
-    <div class="navmenu-item active" data-tab="home"><span class="navmenu-icon">💪</span><span class="navmenu-text">Status &amp; Check-in</span></div>
-    <div class="navmenu-item" data-tab="reserve"><span class="navmenu-icon">📅</span><span class="navmenu-text">Reservieren</span></div>
-    <div class="navmenu-item" data-tab="training"><span class="navmenu-icon">🎯</span><span class="navmenu-text">Training</span></div>
-    <div class="navmenu-item" data-tab="ausstattung"><span class="navmenu-icon">🏋️</span><span class="navmenu-text">Ausstattung</span></div>
-    <div class="navmenu-item" data-tab="uebungen"><span class="navmenu-icon">✨</span><span class="navmenu-text">Übungen</span></div>
-  </div>
+<div id="workoutProgressBar" class="workout-progress" hidden>
+  <div class="workout-progress-label" id="workoutProgressLabel">Übung 1 / 6</div>
+  <div class="workout-progress-track"><div class="workout-progress-fill" id="workoutProgressFill"></div></div>
 </div>
 
 <div class="wrap">
@@ -61,13 +53,14 @@
     <div id="card"><div class="sub" style="padding:40px 0">Verbinde...</div></div>
     <div id="upcoming"></div>
     <div id="form"></div>
-
-    <div class="section-title" style="margin-top:22px">Wochenübersicht</div>
-    <div id="weekOverview"></div>
+    <div id="authPanel"></div>
+    <div id="growthMvpSections"></div>
   </div>
 
   <!-- ========== RESERVIEREN ========== -->
   <div class="tab-page" id="page-reserve">
+    <div class="section-title">Wochenübersicht</div>
+    <div id="weekOverview"></div>
     <div id="reserveContent"></div>
   </div>
 
@@ -213,11 +206,33 @@
   </div>
 
 </div>
-</div>
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version">Keller Gym · v1.12.1 · Stand: 03.08.2026</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.13.1</div>
+
+<nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
+  <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
+    <span>Übersicht</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="training" aria-label="Training">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11"/><path d="M14 6h4v4"/><path d="M10 18H6v-4"/><path d="M18 10l-2-2"/><path d="M8 14l-2 2"/></svg>
+    <span>Training</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="reserve" aria-label="Reservieren">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    <span>Reserv.</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="uebungen" aria-label="Übungen">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+    <span>Übungen</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="ausstattung" aria-label="Ausstattung">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    <span>Guide</span>
+  </button>
+</nav>
 
 </body>
 </html>

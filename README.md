@@ -1,30 +1,54 @@
 # Keller Gym
 
-Single-Page-Trainings-App fuer das Home-Gym im Keller, mit Firebase Realtime Database als Backend.
+Single-Page-Trainings-App (PWA) fuer das Home-Gym im Keller, mit Firebase Realtime Database + Auth als Backend.
+
+## Phase 1 (Foundation)
+
+- **Echte Konten:** anonymer Gast + E-Mail-Magic-Link; Check-in ohne Login, Training nur angemeldet (Logs unter UID)
+- **Datenmodell v2:** `gym/users`, `gym/plans`, `gym/events`, `gym/roles`, … — siehe `docs/data-model-v2.md` und `js/data-model.js`
+- **Services:** `js/services/*` (Profil, Plaene, Feed, Logs/Streaks, Schema, Rollen)
+- **Telemetrie:** lokales Event-/Error-Tracking (`js/telemetry.js`, Debug: `window.__kgTelemetry`)
+- **Modul-Split:** Feature-Module statt Monolith
+
+### Regeln deployen
+
+Nach Schema-/Auth-Aenderungen die Realtime-Database-Rules aus `database.rules.json` in der Firebase Console (oder via CLI) veroeffentlichen. Ohne Deploy greifen Profile/Plaene/Feed ggf. nicht remote (lokaler Fallback bleibt).
+
+In Firebase Auth: **Anonymous** + **E-Mail-Link**. Für Owner-Übersicht aller Trainingsdaten zusätzlich `gym/roles/{deineUid} = "owner"` setzen und `database.rules.json` deployen.
 
 ## Projektstruktur
 
 ```
-kellerkraft-gym/
-├── index.html        Grundgeruest, Navigation, alle Tab-Seiten (HTML)
-├── css/
-│   └── styles.css    Alle Styles (Design, Layout, Dark/Light Theme)
-├── js/
-│   ├── app.js         Firebase-Setup, State, Render-Logik, Event-Handler
-│   └── data.js        Statische Trainingsdaten (Uebungen, Anleitungen, Level)
-└── README.md
+├── index.html
+├── css/styles.css
+├── database.rules.json
+├── docs/data-model-v2.md
+├── assets/                 PWA-Icons, Body-Icons, Uebungsmedien
+└── js/
+    ├── app.js              Orchestrator (Boot, Home/Check-in, Nav)
+    ├── firebase.js         Firebase App / DB / Auth
+    ├── auth.js / auth-ui.js
+    ├── telemetry.js
+    ├── growth.js           Profil, Wochenziel-Auszeichnung, Streaks, Feed-UI
+    ├── reservations.js
+    ├── exercises.js
+    ├── training.js
+    ├── ui.js / state.js
+    ├── data.js / data-model.js
+    └── services/           users, plans, events, logs, roles, schema
 ```
 
 ## Aenderungen vornehmen
 
-- **Neue Uebung hinzufuegen / Anleitung anpassen** → `js/data.js`
-- **Aussehen/Farben/Layout aendern** → `css/styles.css`
-- **Firebase-Konfiguration aendern** → oberer Teil von `js/app.js`
-- **Neue Navigationspunkte / Tab-Seiten** → `index.html` (HTML-Struktur) + `js/app.js` (Render-Funktion + `switchTab`)
+- **Neue Uebung / Anleitung** → `js/data.js`
+- **Aussehen** → `css/styles.css`
+- **Firebase-Config** → `js/firebase.js`
+- **Auth-Flows** → `js/auth.js` + `js/auth-ui.js`
+- **Profil/Plan/Feed** → `js/growth.js` + `js/services/*`
+- **Neue Tabs** → `index.html` + `js/app.js` (`switchTab`)
 
-## Deployment via GitHub Pages
+## Deployment (GitHub Pages)
 
-Siehe Anleitung im Chat. Kurzfassung:
-1. Alle Dateien/Ordner 1:1 ins GitHub-Repo hochladen (Struktur beibehalten!)
-2. Unter Settings → Pages → Branch "main" → Ordner "/ (root)" auswaehlen
-3. Nach jedem Commit aktualisiert sich die Live-Seite automatisch (ca. 1 Minute Wartezeit)
+1. Dateien im Repo-Root belassen (Struktur wie oben)
+2. Settings → Pages → Branch `main` → `/ (root)`
+3. Nach Commit aktualisiert sich die Live-Seite automatisch
