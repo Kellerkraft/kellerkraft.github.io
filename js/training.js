@@ -71,7 +71,7 @@ export function createTrainingModule(ctx = {}) {
       <div class="info-box">
         Training ist nur nach Anmeldung möglich — damit deine Daten fest zu deinem Konto gehören.
         <br><br>
-        Gehe zur <strong>Übersicht</strong>, sichere dein Konto per E-Mail-Link, und speichere deinen Profilnamen.
+        Gehe zur <strong>Übersicht</strong>, melde dich mit E-Mail und Passwort an, und speichere deinen Profilnamen.
       </div>`;
   }
 

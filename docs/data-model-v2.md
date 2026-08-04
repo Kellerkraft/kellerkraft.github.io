@@ -1,6 +1,6 @@
 # Firebase Datenmodell v2
 
-Schema-Version: **2** · Backend: Firebase Realtime Database (`gym/`) · Auth: anonym + E-Mail-Magic-Link (`auth.uid`)
+Schema-Version: **2** · Backend: Firebase Realtime Database (`gym/`) · Auth: anonym + E-Mail/Passwort (`auth.uid`)
 
 Dieses Dokument definiert das Ziel-Datenmodell und die Rollenrechte. Legacy-Pfade bleiben bis zur Migration lesbar/schreibbar (siehe [Migration](#migration-von-v1)).
 

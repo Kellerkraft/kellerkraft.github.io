@@ -1,14 +1,13 @@
 /**
- * Auth module — anonymous guest + email magic link.
- * Email is embedded in the continue URL so opening the mail link
- * does not require re-typing the address (no prompt).
+ * Auth module — anonymous guest + email/password.
+ * Persistence: browser local (Password Manager friendly).
  */
 import {
   onAuthStateChanged,
   signInAnonymously,
-  sendSignInLinkToEmail,
-  isSignInWithEmailLink,
-  signInWithEmailLink,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   linkWithCredential,
   EmailAuthProvider,
   signOut,
@@ -17,8 +16,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { auth } from "./firebase.js";
 import { trackEvent, trackError } from "./telemetry.js";
-
-const EMAIL_KEY = "kg_email_for_sign_in";
 
 /** @type {import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js").User|null} */
 let currentUser = null;
@@ -45,74 +42,41 @@ function mapAuthError(err) {
   const code = err?.code || "";
   if (code === "auth/invalid-email") return "Ungültige E-Mail-Adresse.";
   if (code === "auth/missing-email") return "Bitte E-Mail eingeben.";
-  if (code === "auth/email-required-for-link") {
-    return "Bitte dieselbe E-Mail eingeben, an die der Link geschickt wurde.";
+  if (code === "auth/missing-password" || code === "auth/weak-password") {
+    return "Passwort zu kurz — mindestens 6 Zeichen.";
+  }
+  if (code === "auth/wrong-password" || code === "auth/invalid-credential" || code === "auth/invalid-login-credentials") {
+    return "E-Mail oder Passwort stimmt nicht.";
+  }
+  if (code === "auth/user-not-found") {
+    return "Kein Konto mit dieser E-Mail — bitte registrieren.";
+  }
+  if (code === "auth/email-already-in-use") {
+    return "Diese E-Mail ist schon registriert — bitte anmelden oder Passwort zurücksetzen.";
   }
   if (code === "auth/too-many-requests") return "Zu viele Versuche — bitte kurz warten.";
   if (code === "auth/unauthorized-domain") {
     return "Diese Domain ist in Firebase unter Authorized domains noch nicht freigegeben.";
   }
   if (code === "auth/operation-not-allowed") {
-    return "E-Mail-Link ist in Firebase noch nicht aktiviert (Authentication → E-Mail/Passwort → E-Mail-Link).";
-  }
-  if (code === "auth/invalid-action-code" || code === "auth/expired-action-code") {
-    return "Der Link ist ungültig oder abgelaufen — bitte neu anfordern.";
+    return "E-Mail/Passwort ist in Firebase noch nicht aktiviert (Authentication → Anmeldemethode → E-Mail/Passwort).";
   }
   return err?.message || "Anmeldung fehlgeschlagen.";
 }
 
-function buildContinueUrl(email) {
-  const url = new URL(location.href);
-  // Stay on current path (GitHub Pages root or subpath)
-  url.search = "";
-  url.hash = "";
-  url.searchParams.set("auth", "email");
-  url.searchParams.set("email", email);
-  return url.toString();
+function cleanEmail(email) {
+  return String(email || "").trim().toLowerCase();
 }
 
-/**
- * Resolve email for link completion without prompting.
- * Priority: explicit override → URL ?email= → localStorage.
- */
-export function resolveEmailForSignInLink(href = window.location.href, emailOverride = "") {
-  const override = String(emailOverride || "").trim().toLowerCase();
-  if (override.includes("@")) return override;
-
-  try {
-    const url = new URL(href);
-    const fromQuery = (url.searchParams.get("email") || url.searchParams.get("e") || "").trim().toLowerCase();
-    if (fromQuery.includes("@")) return fromQuery;
-
-    // Firebase sometimes nests continueUrl
-    const continueUrl = url.searchParams.get("continueUrl");
-    if (continueUrl) {
-      const nested = new URL(continueUrl);
-      const nestedEmail = (nested.searchParams.get("email") || nested.searchParams.get("e") || "").trim().toLowerCase();
-      if (nestedEmail.includes("@")) return nestedEmail;
-    }
-  } catch { /* ignore */ }
-
-  const stored = (localStorage.getItem(EMAIL_KEY) || "").trim().toLowerCase();
-  return stored.includes("@") ? stored : "";
-}
-
-export function isEmailSignInLink(href = window.location.href) {
-  try {
-    return isSignInWithEmailLink(auth, href);
-  } catch {
-    return false;
+function assertEmailPassword(email, password) {
+  const cleaned = cleanEmail(email);
+  if (!cleaned || !cleaned.includes("@")) {
+    throw new Error("Bitte eine gültige E-Mail-Adresse eingeben.");
   }
-}
-
-function cleanAuthParamsFromUrl(href = window.location.href) {
-  try {
-    const url = new URL(href);
-    ["auth", "email", "e", "apiKey", "oobCode", "mode", "lang", "continueUrl"].forEach((key) => {
-      url.searchParams.delete(key);
-    });
-    window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
-  } catch { /* ignore */ }
+  if (!password || String(password).length < 6) {
+    throw new Error("Passwort zu kurz — mindestens 6 Zeichen.");
+  }
+  return cleaned;
 }
 
 export function getAuthSnapshot() {
@@ -165,74 +129,72 @@ export function watchAuth() {
   });
 }
 
-export async function sendEmailSignInLink(email) {
+/**
+ * Register with email/password. Links anonymous guest when possible so UID stays.
+ */
+export async function registerWithEmailPassword(email, password) {
   await ensurePersistence();
-  const cleaned = String(email || "").trim().toLowerCase();
-  if (!cleaned || !cleaned.includes("@")) {
-    throw new Error("Bitte eine gültige E-Mail-Adresse eingeben.");
-  }
+  const cleaned = assertEmailPassword(email, password);
   try {
-    const actionCodeSettings = {
-      url: buildContinueUrl(cleaned),
-      handleCodeInApp: true
-    };
-    await sendSignInLinkToEmail(auth, cleaned, actionCodeSettings);
-    localStorage.setItem(EMAIL_KEY, cleaned);
-    trackEvent("auth_email_link_sent");
-    return cleaned;
+    let userCred;
+    if (auth.currentUser?.isAnonymous) {
+      const credential = EmailAuthProvider.credential(cleaned, password);
+      try {
+        userCred = await linkWithCredential(auth.currentUser, credential);
+        trackEvent("auth_password_linked");
+      } catch (err) {
+        if (err?.code === "auth/credential-already-in-use" || err?.code === "auth/email-already-in-use") {
+          userCred = await signInWithEmailAndPassword(auth, cleaned, password);
+          trackEvent("auth_password_signed_in_existing");
+        } else {
+          throw err;
+        }
+      }
+    } else {
+      userCred = await createUserWithEmailAndPassword(auth, cleaned, password);
+      trackEvent("auth_password_registered");
+    }
+    currentUser = userCred.user;
+    notify();
+    return getAuthSnapshot();
   } catch (err) {
-    trackError(err, { source: "auth.email_link_send" });
+    trackError(err, { source: "auth.register" });
     const mapped = new Error(mapAuthError(err));
     mapped.code = err?.code;
     throw mapped;
   }
 }
 
-/**
- * Complete magic-link sign-in. Never uses window.prompt.
- * @param {string} [href]
- * @param {string} [emailOverride] only if URL/localStorage have no email
- * @returns {Promise<object|null>} auth snapshot, or null if URL is not a sign-in link
- */
-export async function completeEmailLinkSignIn(href = window.location.href, emailOverride = "") {
+export async function signInWithEmailPassword(email, password) {
   await ensurePersistence();
-  if (!isSignInWithEmailLink(auth, href)) return null;
-
-  const email = resolveEmailForSignInLink(href, emailOverride);
-  if (!email) {
-    const err = new Error("Bitte dieselbe E-Mail eingeben, an die der Link geschickt wurde.");
-    err.code = "auth/email-required-for-link";
-    throw err;
-  }
-
+  const cleaned = assertEmailPassword(email, password);
   try {
-    const credential = EmailAuthProvider.credentialWithLink(email, href);
-    let userCred;
-    try {
-      if (auth.currentUser?.isAnonymous) {
-        userCred = await linkWithCredential(auth.currentUser, credential);
-        trackEvent("auth_email_linked");
-      } else {
-        userCred = await signInWithEmailLink(auth, email, href);
-        trackEvent("auth_email_signed_in");
-      }
-    } catch (err) {
-      if (err?.code === "auth/credential-already-in-use" || err?.code === "auth/email-already-in-use") {
-        userCred = await signInWithEmailLink(auth, email, href);
-        trackEvent("auth_email_signed_in_existing");
-      } else {
-        throw err;
-      }
-    }
-
-    localStorage.removeItem(EMAIL_KEY);
+    const userCred = await signInWithEmailAndPassword(auth, cleaned, password);
     currentUser = userCred.user;
-    cleanAuthParamsFromUrl(href);
+    trackEvent("auth_password_signed_in");
     notify();
     return getAuthSnapshot();
   } catch (err) {
-    if (err?.code === "auth/email-required-for-link") throw err;
-    trackError(err, { source: "auth.email_link" });
+    trackError(err, { source: "auth.sign_in" });
+    const mapped = new Error(mapAuthError(err));
+    mapped.code = err?.code;
+    throw mapped;
+  }
+}
+
+/** For accounts that only had magic-link before — sets a password via mail. */
+export async function resetPassword(email) {
+  await ensurePersistence();
+  const cleaned = cleanEmail(email);
+  if (!cleaned || !cleaned.includes("@")) {
+    throw new Error("Bitte eine gültige E-Mail-Adresse eingeben.");
+  }
+  try {
+    await sendPasswordResetEmail(auth, cleaned);
+    trackEvent("auth_password_reset_sent");
+    return cleaned;
+  } catch (err) {
+    trackError(err, { source: "auth.reset" });
     const mapped = new Error(mapAuthError(err));
     mapped.code = err?.code;
     throw mapped;
