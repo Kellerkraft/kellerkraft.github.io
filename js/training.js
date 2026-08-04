@@ -380,7 +380,36 @@ export function createTrainingModule(ctx = {}) {
   function customWorkoutsRef(key) { return ref(db, `gym/customWorkouts/${safeUserKey(key)}`); }
   function customWorkoutRef(key, id) { return ref(db, `gym/customWorkouts/${safeUserKey(key)}/${id}`); }
 
-  let manualSelectedExerciseIds = new Set();
+  /** Ordered exercise ids while creating a custom workout. */
+  let manualOrderedExerciseIds = [];
+
+  function moveIdInList(ids, index, delta) {
+    const next = index + delta;
+    if (next < 0 || next >= ids.length) return ids;
+    const copy = [...ids];
+    [copy[index], copy[next]] = [copy[next], copy[index]];
+    return copy;
+  }
+
+  function exerciseOrderListHtml(exerciseIds, opts = {}) {
+    const { dataWorkoutId = "", emptyText = "Noch keine Übungen gewählt." } = opts;
+    if (!exerciseIds.length) {
+      return `<div class="sub" style="margin:8px 0">${emptyText}</div>`;
+    }
+    return `<ol class="workout-order-list" ${dataWorkoutId ? `data-workoutid="${dataWorkoutId}"` : ""}>
+      ${exerciseIds.map((id, idx) => {
+        const ex = findExercise(id);
+        const label = ex ? ex.name : id;
+        return `<li class="workout-order-item" data-exid="${id}" data-idx="${idx}">
+          <span class="workout-order-label"><span class="workout-order-num">${idx + 1}.</span> ${label}</span>
+          <span class="workout-order-actions">
+            <button type="button" class="workout-order-btn" data-dir="-1" title="Nach oben" ${idx === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="workout-order-btn" data-dir="1" title="Nach unten" ${idx === exerciseIds.length - 1 ? "disabled" : ""}>↓</button>
+          </span>
+        </li>`;
+      }).join("")}
+    </ol>`;
+  }
 
   async function getCustomWorkouts(key) {
     try {
@@ -408,6 +437,17 @@ export function createTrainingModule(ctx = {}) {
     }
   }
 
+  async function updateCustomWorkoutOrder(key, id, exerciseIds) {
+    try {
+      await set(ref(db, `gym/customWorkouts/${safeUserKey(key)}/${id}/exerciseIds`), exerciseIds);
+      showToast("Reihenfolge gespeichert.", "success", 1800);
+      return true;
+    } catch (err) {
+      showToast("Reihenfolge konnte nicht gespeichert werden.", "error");
+      return false;
+    }
+  }
+
   async function deleteCustomWorkout(key, id) {
     try {
       await remove(customWorkoutRef(key, id));
@@ -420,21 +460,47 @@ export function createTrainingModule(ctx = {}) {
   }
 
   function renderExercisePickerList(container) {
+    const selected = new Set(manualOrderedExerciseIds);
     const groups = {};
     getAllExercises().forEach(e => { (groups[e.body] = groups[e.body] || []).push(e); });
     container.innerHTML = Object.entries(groups).map(([body, list]) => `
       <div class="section-title" style="margin-top:16px; font-size:0.95em;">${BODY_LABELS[body] || body}</div>
       ${list.map(e => `
         <label class="chip" style="display:flex; align-items:center; gap:8px; width:100%; text-align:left; padding:10px 12px; margin-bottom:6px; cursor:pointer;">
-          <input type="checkbox" class="manual-ex-checkbox" data-exid="${e.id}" ${manualSelectedExerciseIds.has(e.id) ? "checked" : ""} style="width:auto;">
+          <input type="checkbox" class="manual-ex-checkbox" data-exid="${e.id}" ${selected.has(e.id) ? "checked" : ""} style="width:auto;">
           <span>${e.name}</span>
         </label>
       `).join("")}
     `).join("");
     container.querySelectorAll(".manual-ex-checkbox").forEach(cb => {
       cb.addEventListener("change", () => {
-        if (cb.checked) manualSelectedExerciseIds.add(cb.dataset.exid);
-        else manualSelectedExerciseIds.delete(cb.dataset.exid);
+        const id = cb.dataset.exid;
+        if (cb.checked) {
+          if (!manualOrderedExerciseIds.includes(id)) manualOrderedExerciseIds.push(id);
+        } else {
+          manualOrderedExerciseIds = manualOrderedExerciseIds.filter((x) => x !== id);
+        }
+        renderManualOrderPreview();
+      });
+    });
+  }
+
+  function renderManualOrderPreview() {
+    const box = document.getElementById("manualWorkoutOrder");
+    if (!box) return;
+    box.innerHTML = `
+      <div class="field-label" style="margin-top:14px">Reihenfolge</div>
+      <div class="sub" style="margin-bottom:6px">Mit ↑↓ die Trainingsreihenfolge festlegen.</div>
+      ${exerciseOrderListHtml(manualOrderedExerciseIds)}
+    `;
+    box.querySelectorAll(".workout-order-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const item = btn.closest(".workout-order-item");
+        const idx = parseInt(item?.dataset.idx, 10);
+        const dir = parseInt(btn.dataset.dir, 10);
+        if (Number.isNaN(idx) || Number.isNaN(dir)) return;
+        manualOrderedExerciseIds = moveIdInList(manualOrderedExerciseIds, idx, dir);
+        renderManualOrderPreview();
       });
     });
   }
@@ -454,9 +520,8 @@ export function createTrainingModule(ctx = {}) {
         <div class="faq-item" data-workoutid="${w.id}">
           <button class="faq-question">${w.name} <span style="opacity:0.6; font-size:0.85em">(${(w.exerciseIds || []).length} Übungen)</span> <span class="faq-chevron">▾</span></button>
           <div class="faq-answer"><div class="faq-answer-inner">
-            <ul>
-              ${(w.exerciseIds || []).map(id => { const ex = findExercise(id); return `<li>${ex ? ex.name : id}</li>`; }).join("")}
-            </ul>
+            <div class="sub" style="margin-bottom:6px">Reihenfolge mit ↑↓ anpassen — wird sofort gespeichert.</div>
+            ${exerciseOrderListHtml(w.exerciseIds || [], { dataWorkoutId: w.id })}
             <div style="display:flex; gap:10px; margin-top:10px;">
               <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">▶️ Starten</button>
               <button class="btn-main btn-dark delete-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">🗑️ Löschen</button>
@@ -470,6 +535,24 @@ export function createTrainingModule(ctx = {}) {
 
     wrap.querySelectorAll(".faq-question").forEach(btn => {
       btn.addEventListener("click", () => btn.closest(".faq-item").classList.toggle("open"));
+    });
+    wrap.querySelectorAll(".workout-order-btn").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const list = btn.closest(".workout-order-list");
+        const item = btn.closest(".workout-order-item");
+        const workoutId = list?.dataset.workoutid;
+        const idx = parseInt(item?.dataset.idx, 10);
+        const dir = parseInt(btn.dataset.dir, 10);
+        const w = saved.find((x) => x.id === workoutId);
+        if (!w || Number.isNaN(idx) || Number.isNaN(dir)) return;
+        const nextIds = moveIdInList(w.exerciseIds || [], idx, dir);
+        const ok = await updateCustomWorkoutOrder(key, workoutId, nextIds);
+        if (!ok) return;
+        w.exerciseIds = nextIds;
+        await renderCustomWorkoutsSection();
+        document.querySelector(`.faq-item[data-workoutid="${workoutId}"]`)?.classList.add("open");
+      });
     });
     wrap.querySelectorAll(".start-custom-workout-btn").forEach(btn => {
       btn.addEventListener("click", (e) => {
@@ -492,7 +575,7 @@ export function createTrainingModule(ctx = {}) {
       });
     });
     document.getElementById("createManualWorkoutBtn").addEventListener("click", () => {
-      manualSelectedExerciseIds = new Set();
+      manualOrderedExerciseIds = [];
       renderManualWorkoutBuilder();
     });
   }
@@ -501,27 +584,30 @@ export function createTrainingModule(ctx = {}) {
     const builder = document.getElementById("manualWorkoutBuilder");
     if (!builder) return;
     const key = writeKey();
+    const nameValue = document.getElementById("manualWorkoutNameInput")?.value || "";
     builder.innerHTML = `
       <div class="section-title" style="margin-top:20px">Übungen auswählen</div>
       <div id="manualExercisePickerList"></div>
-      <input id="manualWorkoutNameInput" class="name-input" style="margin-top:16px" placeholder="Workout-Name, z. B. Leg Day A" maxlength="30">
+      <div id="manualWorkoutOrder"></div>
+      <input id="manualWorkoutNameInput" class="name-input" style="margin-top:16px" placeholder="Workout-Name, z. B. Leg Day A" maxlength="30" value="${nameValue.replace(/"/g, "&quot;")}">
       <div style="display:flex; gap:10px; margin-top:14px;">
         <button id="saveManualWorkoutBtn" class="btn-main btn-lime" style="flex:1;">💾 Speichern</button>
         <button id="cancelManualWorkoutBtn" class="btn-main btn-dark" style="flex:1;">Abbrechen</button>
       </div>
     `;
     renderExercisePickerList(document.getElementById("manualExercisePickerList"));
+    renderManualOrderPreview();
     document.getElementById("saveManualWorkoutBtn").addEventListener("click", async () => {
       const name = document.getElementById("manualWorkoutNameInput").value.trim();
       if (!name) { alert("Bitte einen Namen für das Workout eingeben."); return; }
-      if (manualSelectedExerciseIds.size === 0) { alert("Bitte mindestens eine Übung auswählen."); return; }
+      if (manualOrderedExerciseIds.length === 0) { alert("Bitte mindestens eine Übung auswählen."); return; }
       if (!key) { alert("Bitte zuerst anmelden."); return; }
-      await saveCustomWorkout(key, name, [...manualSelectedExerciseIds]);
-      manualSelectedExerciseIds = new Set();
+      await saveCustomWorkout(key, name, [...manualOrderedExerciseIds]);
+      manualOrderedExerciseIds = [];
       renderCustomWorkoutsSection();
     });
     document.getElementById("cancelManualWorkoutBtn").addEventListener("click", () => {
-      manualSelectedExerciseIds = new Set();
+      manualOrderedExerciseIds = [];
       builder.innerHTML = "";
     });
   }
@@ -1219,7 +1305,9 @@ export function createTrainingModule(ctx = {}) {
     get completedBodies() { return completedBodies; },
     get currentSets() { return currentSets; },
     WARMUP_EXAMPLES,
-    get manualSelectedExerciseIds() { return manualSelectedExerciseIds; },
+    get manualOrderedExerciseIds() { return manualOrderedExerciseIds; },
+    get manualSelectedExerciseIds() { return new Set(manualOrderedExerciseIds); },
+    updateCustomWorkoutOrder,
     exercisesPerDuration,
     buildWorkout,
     logRef,
