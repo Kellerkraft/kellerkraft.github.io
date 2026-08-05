@@ -26,13 +26,38 @@ export function createExercisesModule(ctx = {}) {
   /* ================= ÜBUNGEN-SEITE (dynamisch, mit Bearbeitung) ================= */
 
   function exerciseOverrideRef(exId) { return ref(db, `gym/exerciseOverrides/${exId}`); }
+  const OVERRIDES_CACHE_KEY = "kg_exercise_overrides_cache_v1";
+
+  function readOverridesCache() {
+    try {
+      return JSON.parse(localStorage.getItem(OVERRIDES_CACHE_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  function writeOverridesCache(data) {
+    try {
+      localStorage.setItem(OVERRIDES_CACHE_KEY, JSON.stringify(data || {}));
+    } catch {
+      // ignore quota errors
+    }
+  }
+
+  async function getWithTimeout(dbRef, ms = 1800) {
+    return Promise.race([
+      get(dbRef),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))
+    ]);
+  }
 
   let customExercises = {}; // id -> exercise object from Firebase (custom: true)
 
   async function loadCustomExercises() {
     try {
-      const snap = await get(ref(db, "gym/exerciseOverrides"));
+      const snap = await getWithTimeout(ref(db, "gym/exerciseOverrides"));
       const all = snap.val() || {};
+      writeOverridesCache(all);
       customExercises = {};
       Object.entries(all).forEach(([id, val]) => {
         if (val && val.custom && val.body) {
@@ -54,19 +79,42 @@ export function createExercisesModule(ctx = {}) {
         }
       });
     } catch (err) {
+      const all = readOverridesCache();
       customExercises = {};
-      showToast("Eigene Übungen konnten nicht geladen werden.", "error");
+      Object.entries(all).forEach(([id, val]) => {
+        if (val && val.custom && val.body) {
+          customExercises[id] = {
+            id,
+            name: val.name,
+            body: val.body,
+            level: val.level || "easy",
+            defMin: val.defMin ?? 8,
+            defMax: val.defMax ?? 12,
+            equip: val.equip || ["custom"],
+            steps: val.steps || [],
+            note: val.note || null,
+            rackSetting: !!val.rackSetting,
+            rackLabel: val.rackLabel || null,
+            custom: true,
+            media: val.media || null
+          };
+        }
+      });
     }
     return customExercises;
   }
 
   async function getExerciseOverrides() {
     try {
-      const snap = await get(ref(db, "gym/exerciseOverrides"));
-      return snap.val() || {};
+      if (navigator.onLine === false) {
+        return readOverridesCache();
+      }
+      const snap = await getWithTimeout(ref(db, "gym/exerciseOverrides"));
+      const data = snap.val() || {};
+      writeOverridesCache(data);
+      return data;
     } catch (err) {
-      showToast("Übungs-Änderungen konnten nicht geladen werden.", "error");
-      return {};
+      return readOverridesCache();
     }
   }
 
