@@ -3,6 +3,17 @@ import { db } from "./firebase.js";
 import { getAuthSnapshot } from "./auth.js";
 import { Paths, safeUserKey as modelSafeUserKey } from "./data-model.js";
 import { BODY_LABELS as DATA_BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC, GOAL_ORDER, GOAL_LABELS, GOAL_DESC, CARDIO_OPTIONS } from "./data.js";
+import {
+  isOnline,
+  enqueueWrite,
+  mergeLogIntoCache,
+  cacheLogTree,
+  readCachedLogTree,
+  cacheLastWorkout,
+  readCachedLastWorkout,
+  syncPendingWrites,
+  pendingCount
+} from "./offline.js";
 
 export function createTrainingModule(ctx = {}) {
   const BODY_LABELS = ctx.BODY_LABELS || ctx.bodyLabels || DATA_BODY_LABELS;
@@ -348,10 +359,69 @@ export function createTrainingModule(ctx = {}) {
     if (!key) return {};
     try {
       const snap = await get(ref(db, Paths.logs(key)));
-      return snap.val() || {};
+      const val = snap.val() || {};
+      cacheLogTree(key, val).catch(() => {});
+      return val;
     } catch {
-      return {};
+      const cached = await readCachedLogTree(key);
+      return cached || {};
     }
+  }
+
+  async function persistLogEntry(key, exId, entry) {
+    const tryRemote = async () => {
+      await push(logRef(key, exId), entry);
+      try {
+        const tree = await loadLogTree(key);
+        // loadLogTree already caches; ensure entry present if race
+        if (!tree[exId]) {
+          await mergeLogIntoCache(key, exId, entry);
+        }
+      } catch { /* ignore */ }
+    };
+
+    if (!isOnline()) {
+      await enqueueWrite({ type: "log", userKey: key, exId, entry });
+      await mergeLogIntoCache(key, exId, entry);
+      return { queued: true };
+    }
+    try {
+      await tryRemote();
+      return { queued: false };
+    } catch (err) {
+      await enqueueWrite({ type: "log", userKey: key, exId, entry });
+      await mergeLogIntoCache(key, exId, entry);
+      return { queued: true, error: err };
+    }
+  }
+
+  async function persistLastWorkout(key, data) {
+    if (!isOnline()) {
+      await enqueueWrite({ type: "lastWorkout", userKey: key, data });
+      await cacheLastWorkout(key, data);
+      return { queued: true };
+    }
+    try {
+      await set(lastWorkoutRef(key), data);
+      await cacheLastWorkout(key, data);
+      return { queued: false };
+    } catch (err) {
+      await enqueueWrite({ type: "lastWorkout", userKey: key, data });
+      await cacheLastWorkout(key, data);
+      return { queued: true, error: err };
+    }
+  }
+
+  async function flushOfflineQueue() {
+    return syncPendingWrites({
+      writeLog: async (userKey, exId, entry) => {
+        await push(logRef(userKey, exId), entry);
+      },
+      writeLastWorkout: async (userKey, data) => {
+        await set(lastWorkoutRef(userKey), data);
+        await cacheLastWorkout(userKey, data);
+      }
+    });
   }
 
   /**
@@ -453,16 +523,16 @@ export function createTrainingModule(ctx = {}) {
   }
 
   async function saveLastWorkout(key, exerciseIds) {
-    try {
-      await set(lastWorkoutRef(key), {
-        date: Date.now(),
-        duration: selectedDuration,
-        body: [...selectedBody],
-        level: selectedLevel,
-        exerciseIds
-      });
-    } catch (err) {
-      showToast("Workout konnte nicht gespeichert werden.", "error");
+    const data = {
+      date: Date.now(),
+      duration: selectedDuration,
+      body: [...selectedBody],
+      level: selectedLevel,
+      exerciseIds
+    };
+    const result = await persistLastWorkout(key, data);
+    if (result.queued) {
+      showToast("Offline gespeichert — sync wenn wieder online.", "info", 2800);
     }
   }
 
@@ -470,16 +540,21 @@ export function createTrainingModule(ctx = {}) {
     try {
       const snap = await get(lastWorkoutRef(key));
       const val = snap.val();
-      if (val) return val;
+      if (val) {
+        cacheLastWorkout(key, val).catch(() => {});
+        return val;
+      }
       // Legacy name fallback for own account only
       const { isOwner } = account();
       if (!isOwner && trainingUser && safeUserKey(trainingUser) !== key) {
         const legacy = await get(lastWorkoutRef(safeUserKey(trainingUser)));
-        return legacy.val();
+        const legacyVal = legacy.val();
+        if (legacyVal) cacheLastWorkout(key, legacyVal).catch(() => {});
+        return legacyVal;
       }
-      return null;
+      return (await readCachedLastWorkout(key)) || null;
     } catch {
-      return null;
+      return (await readCachedLastWorkout(key)) || null;
     }
   }
 
@@ -1456,14 +1531,22 @@ export function createTrainingModule(ctx = {}) {
         return;
       }
       try {
-        await push(logRef(key, ex.id), logEntry);
-        showToast(`Übung gespeichert (${currentSets.length} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
+        const result = await persistLogEntry(key, ex.id, logEntry);
+        if (result.queued) {
+          showToast(`Offline gespeichert (${currentSets.length} Sätze) — sync später.`, "info", 2800);
+        } else {
+          showToast(`Übung gespeichert (${currentSets.length} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
+        }
       } catch (err) {
         console.error("Speichern fehlgeschlagen (voller Eintrag):", err, logEntry);
         const { sets, ...fallbackEntry } = logEntry;
         try {
-          await push(logRef(key, ex.id), fallbackEntry);
-          showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
+          const result = await persistLogEntry(key, ex.id, fallbackEntry);
+          if (result.queued) {
+            showToast("Offline gespeichert (ohne Satz-Details) — sync später.", "info", 3500);
+          } else {
+            showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
+          }
         } catch (err2) {
           console.error("Speichern fehlgeschlagen (Fallback ohne sets):", err2, fallbackEntry);
           showToast("Speichern fehlgeschlagen: " + (err2 && err2.message ? err2.message : "Unbekannter Fehler") + ". Bitte Datenbank-Regeln in der Firebase-Konsole prüfen.", "error", 5000);
@@ -1536,6 +1619,8 @@ export function createTrainingModule(ctx = {}) {
     deleteLogEntry,
     getAllUsers,
     saveLastWorkout,
+    flushOfflineQueue,
+    pendingOfflineCount: pendingCount,
     getLastWorkout,
     getCustomWorkouts,
     saveCustomWorkout,

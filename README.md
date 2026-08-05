@@ -9,8 +9,13 @@ Single-Page-Trainings-App (PWA) fuer das Home-Gym im Keller, mit Firebase Realti
 - **Services:** `js/services/*` (Profil, Plaene, Feed, Logs/Streaks, Schema, Rollen)
 - **Telemetrie:** lokales Event-/Error-Tracking (`js/telemetry.js`, Debug: `window.__kgTelemetry`)
 - **Modul-Split:** Feature-Module statt Monolith
+- **Offline-Training (MVP):** Service Worker (`sw.js`) cached die App; Logs/Last-Workout gehen in IndexedDB-Queue (`js/offline.js`) und syncen bei Verbindung. Check-in/Reservierungen brauchen weiterhin Netz.
 
-### Regeln deployen
+### Offline nutzen
+
+1. App einmal **online** öffnen und einloggen (Cache + Session aufbauen).
+2. Im Keller ohne WLAN: App vom Homescreen / Browser öffnen — Training generieren und loggen.
+3. Wieder online: Pending-Einträge werden automatisch synchronisiert.
 
 Nach Schema-/Auth-Aenderungen die Realtime-Database-Rules aus `database.rules.json` in der Firebase Console (oder via CLI) veroeffentlichen. Ohne Deploy greifen Profile/Plaene/Feed ggf. nicht remote (lokaler Fallback bleibt).
 
