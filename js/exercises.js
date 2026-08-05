@@ -2,6 +2,7 @@ import { ref, get, set, remove } from "https://www.gstatic.com/firebasejs/10.12.
 import { db } from "./firebase.js";
 import { EXERCISE_INSTRUCTIONS, EXERCISES, EXERCISE_MEDIA, BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC } from "./data.js";
 import { showToast, escapeAttr as uiEscapeAttr } from "./ui.js";
+import { isOnline } from "./offline.js";
 
 export function createExercisesModule(ctx = {}) {
   const ownerPin = ctx.ownerPin || "";
@@ -53,60 +54,48 @@ export function createExercisesModule(ctx = {}) {
 
   let customExercises = {}; // id -> exercise object from Firebase (custom: true)
 
+  function hydrateCustomExercisesFromMap(all) {
+    customExercises = {};
+    Object.entries(all || {}).forEach(([id, val]) => {
+      if (val && val.custom && val.body) {
+        customExercises[id] = {
+          id,
+          name: val.name,
+          body: val.body,
+          level: val.level || "easy",
+          defMin: val.defMin ?? 8,
+          defMax: val.defMax ?? 12,
+          equip: val.equip || ["custom"],
+          steps: val.steps || [],
+          note: val.note || null,
+          rackSetting: !!val.rackSetting,
+          rackLabel: val.rackLabel || null,
+          custom: true,
+          media: val.media || null
+        };
+      }
+    });
+  }
+
   async function loadCustomExercises() {
     try {
+      if (!isOnline()) {
+        hydrateCustomExercisesFromMap(readOverridesCache());
+        return customExercises;
+      }
       const snap = await getWithTimeout(ref(db, "gym/exerciseOverrides"));
       const all = snap.val() || {};
       writeOverridesCache(all);
-      customExercises = {};
-      Object.entries(all).forEach(([id, val]) => {
-        if (val && val.custom && val.body) {
-          customExercises[id] = {
-            id,
-            name: val.name,
-            body: val.body,
-            level: val.level || "easy",
-            defMin: val.defMin ?? 8,
-            defMax: val.defMax ?? 12,
-            equip: val.equip || ["custom"],
-            steps: val.steps || [],
-            note: val.note || null,
-            rackSetting: !!val.rackSetting,
-            rackLabel: val.rackLabel || null,
-            custom: true,
-            media: val.media || null
-          };
-        }
-      });
+      hydrateCustomExercisesFromMap(all);
     } catch (err) {
-      const all = readOverridesCache();
-      customExercises = {};
-      Object.entries(all).forEach(([id, val]) => {
-        if (val && val.custom && val.body) {
-          customExercises[id] = {
-            id,
-            name: val.name,
-            body: val.body,
-            level: val.level || "easy",
-            defMin: val.defMin ?? 8,
-            defMax: val.defMax ?? 12,
-            equip: val.equip || ["custom"],
-            steps: val.steps || [],
-            note: val.note || null,
-            rackSetting: !!val.rackSetting,
-            rackLabel: val.rackLabel || null,
-            custom: true,
-            media: val.media || null
-          };
-        }
-      });
+      hydrateCustomExercisesFromMap(readOverridesCache());
     }
     return customExercises;
   }
 
   async function getExerciseOverrides() {
     try {
-      if (navigator.onLine === false) {
+      if (!isOnline()) {
         return readOverridesCache();
       }
       const snap = await getWithTimeout(ref(db, "gym/exerciseOverrides"));
