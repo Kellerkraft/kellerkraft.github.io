@@ -118,10 +118,22 @@ export function createExercisesModule(ctx = {}) {
     }
   }
 
+  function normalizeExerciseMeta(ex) {
+    if (!ex) return ex;
+    const pattern = ex.pattern || (Array.isArray(ex.equip) && (ex.equip.includes("langhantel") || ex.equip.includes("rack") || ex.equip.includes("jammer")) ? "compound" : "isolation");
+    let goalBias = Array.isArray(ex.goalBias) && ex.goalBias.length ? ex.goalBias : null;
+    if (!goalBias) {
+      if (pattern === "compound" && (ex.defMax || 12) <= 10) goalBias = ["kraft", "muskelaufbau"];
+      else if ((ex.defMax || 12) >= 15) goalBias = ["muskelaufbau", "abnehmen"];
+      else goalBias = ["muskelaufbau", "abnehmen"];
+    }
+    return { ...ex, pattern, goalBias };
+  }
+
   function getAllExercises() {
     const staticIds = new Set(EXERCISES.map(e => e.id));
     const customs = Object.values(customExercises).filter(e => e && e.id && !staticIds.has(e.id));
-    return [...EXERCISES, ...customs];
+    return [...EXERCISES, ...customs].map(normalizeExerciseMeta);
   }
 
   function findExercise(id) {
@@ -445,7 +457,9 @@ export function createExercisesModule(ctx = {}) {
           id, name, body, level, defMin, defMax,
           equip: ["custom"],
           steps, note: note || null,
-          custom: true
+          custom: true,
+          pattern: "isolation",
+          goalBias: ["muskelaufbau", "abnehmen"]
         };
         const ok = await saveCustomExercise(ex);
         if (ok) renderUebungenPage();

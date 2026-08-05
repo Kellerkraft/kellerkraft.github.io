@@ -2,7 +2,18 @@ import { ref, get, set, remove, push } from "https://www.gstatic.com/firebasejs/
 import { db } from "./firebase.js";
 import { getAuthSnapshot } from "./auth.js";
 import { Paths, safeUserKey as modelSafeUserKey } from "./data-model.js";
-import { BODY_LABELS as DATA_BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC } from "./data.js";
+import { BODY_LABELS as DATA_BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC, GOAL_ORDER, GOAL_LABELS, GOAL_DESC, CARDIO_OPTIONS } from "./data.js";
+import {
+  isOnline,
+  enqueueWrite,
+  mergeLogIntoCache,
+  cacheLogTree,
+  readCachedLogTree,
+  cacheLastWorkout,
+  readCachedLastWorkout,
+  syncPendingWrites,
+  pendingCount
+} from "./offline.js";
 
 export function createTrainingModule(ctx = {}) {
   const BODY_LABELS = ctx.BODY_LABELS || ctx.bodyLabels || DATA_BODY_LABELS;
@@ -193,6 +204,10 @@ export function createTrainingModule(ctx = {}) {
   let selectedBody = new Set();
   let selectedLevel = null;
   let selectedDuration = 30;
+  let selectedGoal = "muskelaufbau";
+  /** null = undecided, true/false after user picks */
+  let cardioEnabled = null;
+  let selectedCardio = new Set();
   let currentWorkoutQueue = [];
   let currentExerciseIdx = 0;
   let completedBodies = new Set();
@@ -214,18 +229,122 @@ export function createTrainingModule(ctx = {}) {
     return 8;
   }
 
+  function isCardioStep(item) {
+    return Boolean(item && item.type === "cardio");
+  }
+
+  function strengthIdsFromQueue(queue = currentWorkoutQueue) {
+    return queue.filter((e) => e && !isCardioStep(e) && e.id).map((e) => e.id);
+  }
+
+  function scoreExerciseForGoal(ex, goal) {
+    let score = 1;
+    const bias = Array.isArray(ex.goalBias) ? ex.goalBias : [];
+    const pattern = ex.pattern || "isolation";
+    const defMax = ex.defMax ?? 12;
+
+    if (bias.includes(goal)) score += 4;
+    else score -= 1;
+
+    if (goal === "kraft") {
+      if (pattern === "compound") score += 3;
+      if (defMax <= 10) score += 2;
+      if (pattern === "isolation") score -= 2;
+      if (defMax >= 15) score -= 2;
+    } else if (goal === "muskelaufbau") {
+      if (pattern === "compound") score += 1;
+      if (pattern === "isolation") score += 1;
+      if (defMax >= 8 && defMax <= 15) score += 1;
+    } else if (goal === "abnehmen") {
+      if (defMax >= 12) score += 2;
+      if (pattern === "isolation") score += 1;
+      if (pattern === "compound" && defMax <= 8) score -= 2;
+      if (bias.includes("abnehmen")) score += 1;
+    }
+    return score;
+  }
+
+  function makeCardioStep(optionId, goal) {
+    const opt = CARDIO_OPTIONS.find((c) => c.id === optionId) || CARDIO_OPTIONS[0];
+    const minutes = (opt.minutes && opt.minutes[goal]) || (opt.minutes && opt.minutes.muskelaufbau) || 10;
+    return {
+      type: "cardio",
+      id: `cardio_${opt.id}`,
+      cardioId: opt.id,
+      name: opt.label,
+      body: "cardio",
+      minutes,
+      note: `${minutes} Min. ${opt.label} — lockeres Tempo, als Finisher nach dem Kraftteil.`
+    };
+  }
+
+  function appendCardioFinisher(queue) {
+    if (cardioEnabled !== true || selectedCardio.size === 0) return queue;
+    const ids = [...selectedCardio];
+    const pick = ids[Math.floor(Math.random() * ids.length)];
+    return [...queue, makeCardioStep(pick, selectedGoal || "muskelaufbau")];
+  }
+
   function buildWorkout() {
+    const goal = selectedGoal || "muskelaufbau";
     const allowedLevels = levelsUpTo(selectedLevel || "advanced");
     const all = getAllExercises();
     let pool = all.filter(e => selectedBody.has(e.body) && allowedLevels.includes(e.level));
     if (pool.length === 0) pool = all.filter(e => allowedLevels.includes(e.level));
     const count = Math.min(exercisesPerDuration(selectedDuration), pool.length || 1);
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+
+    const scored = pool.map((e) => ({ e, score: scoreExerciseForGoal(e, goal) }));
+    scored.sort((a, b) => b.score - a.score || Math.random() - 0.5);
+    const topCut = Math.max(count, Math.ceil(scored.length * 0.6));
+    const candidates = scored.slice(0, topCut).map((x) => x.e);
+    const shuffled = [...candidates].sort(() => Math.random() - 0.5);
+
     const byBody = {};
     const result = [];
-    shuffled.forEach(e => { if(!byBody[e.body]) { byBody[e.body] = true; result.push(e); } });
-    shuffled.forEach(e => { if (result.length < count && !result.includes(e)) result.push(e); });
-    return result.slice(0, count);
+    shuffled.forEach((e) => { if (!byBody[e.body]) { byBody[e.body] = true; result.push(e); } });
+    shuffled.forEach((e) => { if (result.length < count && !result.includes(e)) result.push(e); });
+    // Prefer mixing compound+isolation for hypertrophy when possible
+    if (goal === "muskelaufbau" && result.length >= 2) {
+      const hasCompound = result.some((e) => e.pattern === "compound");
+      const hasIsolation = result.some((e) => e.pattern === "isolation");
+      if (!hasIsolation) {
+        const iso = shuffled.find((e) => e.pattern === "isolation" && !result.includes(e));
+        if (iso) result[result.length - 1] = iso;
+      } else if (!hasCompound) {
+        const comp = shuffled.find((e) => e.pattern === "compound" && !result.includes(e));
+        if (comp) result[0] = comp;
+      }
+    }
+
+    return appendCardioFinisher(result.slice(0, count));
+  }
+
+  function exerciseSetupHint(ex) {
+    if (!ex) return "";
+    if (isCardioStep(ex)) {
+      return `${ex.minutes || 10} Min. ${ex.name} — Ort/Gerät vorbereiten.`;
+    }
+    const equip = Array.isArray(ex.equip) ? ex.equip : [];
+    const hints = [];
+    if (ex.rackSetting || ex.rackLabel) {
+      hints.push(`Rack vorbereiten: ${ex.rackLabel || "J-Hooks / Safety Arms"}`);
+    }
+    if (equip.includes("jammer")) {
+      hints.push("Jammer Arme anbauen / Höhe einstellen");
+    }
+    if (equip.includes("kabel")) {
+      hints.push("Kabelzug / Griff vorbereiten");
+    }
+    if (equip.includes("langhantel") && !ex.rackSetting) {
+      hints.push("Langhantel bereitstellen");
+    }
+    if (equip.includes("kurzhantel")) {
+      hints.push("Kurzhanteln bereitlegen");
+    }
+    if (equip.includes("abback")) {
+      hints.push("Ab & Back Trainer einstellen");
+    }
+    return hints[0] || "Geräte kurz checken, dann starten.";
   }
 
   function logRef(key, exId) { return ref(db, `gym/logs/${key}/${exId}`); }
@@ -240,10 +359,69 @@ export function createTrainingModule(ctx = {}) {
     if (!key) return {};
     try {
       const snap = await get(ref(db, Paths.logs(key)));
-      return snap.val() || {};
+      const val = snap.val() || {};
+      cacheLogTree(key, val).catch(() => {});
+      return val;
     } catch {
-      return {};
+      const cached = await readCachedLogTree(key);
+      return cached || {};
     }
+  }
+
+  async function persistLogEntry(key, exId, entry) {
+    const tryRemote = async () => {
+      await push(logRef(key, exId), entry);
+      try {
+        const tree = await loadLogTree(key);
+        // loadLogTree already caches; ensure entry present if race
+        if (!tree[exId]) {
+          await mergeLogIntoCache(key, exId, entry);
+        }
+      } catch { /* ignore */ }
+    };
+
+    if (!isOnline()) {
+      await enqueueWrite({ type: "log", userKey: key, exId, entry });
+      await mergeLogIntoCache(key, exId, entry);
+      return { queued: true };
+    }
+    try {
+      await tryRemote();
+      return { queued: false };
+    } catch (err) {
+      await enqueueWrite({ type: "log", userKey: key, exId, entry });
+      await mergeLogIntoCache(key, exId, entry);
+      return { queued: true, error: err };
+    }
+  }
+
+  async function persistLastWorkout(key, data) {
+    if (!isOnline()) {
+      await enqueueWrite({ type: "lastWorkout", userKey: key, data });
+      await cacheLastWorkout(key, data);
+      return { queued: true };
+    }
+    try {
+      await set(lastWorkoutRef(key), data);
+      await cacheLastWorkout(key, data);
+      return { queued: false };
+    } catch (err) {
+      await enqueueWrite({ type: "lastWorkout", userKey: key, data });
+      await cacheLastWorkout(key, data);
+      return { queued: true, error: err };
+    }
+  }
+
+  async function flushOfflineQueue() {
+    return syncPendingWrites({
+      writeLog: async (userKey, exId, entry) => {
+        await push(logRef(userKey, exId), entry);
+      },
+      writeLastWorkout: async (userKey, data) => {
+        await set(lastWorkoutRef(userKey), data);
+        await cacheLastWorkout(userKey, data);
+      }
+    });
   }
 
   /**
@@ -345,16 +523,16 @@ export function createTrainingModule(ctx = {}) {
   }
 
   async function saveLastWorkout(key, exerciseIds) {
-    try {
-      await set(lastWorkoutRef(key), {
-        date: Date.now(),
-        duration: selectedDuration,
-        body: [...selectedBody],
-        level: selectedLevel,
-        exerciseIds
-      });
-    } catch (err) {
-      showToast("Workout konnte nicht gespeichert werden.", "error");
+    const data = {
+      date: Date.now(),
+      duration: selectedDuration,
+      body: [...selectedBody],
+      level: selectedLevel,
+      exerciseIds
+    };
+    const result = await persistLastWorkout(key, data);
+    if (result.queued) {
+      showToast("Offline gespeichert — sync wenn wieder online.", "info", 2800);
     }
   }
 
@@ -362,16 +540,21 @@ export function createTrainingModule(ctx = {}) {
     try {
       const snap = await get(lastWorkoutRef(key));
       const val = snap.val();
-      if (val) return val;
+      if (val) {
+        cacheLastWorkout(key, val).catch(() => {});
+        return val;
+      }
       // Legacy name fallback for own account only
       const { isOwner } = account();
       if (!isOwner && trainingUser && safeUserKey(trainingUser) !== key) {
         const legacy = await get(lastWorkoutRef(safeUserKey(trainingUser)));
-        return legacy.val();
+        const legacyVal = legacy.val();
+        if (legacyVal) cacheLastWorkout(key, legacyVal).catch(() => {});
+        return legacyVal;
       }
-      return null;
+      return (await readCachedLastWorkout(key)) || null;
     } catch {
-      return null;
+      return (await readCachedLastWorkout(key)) || null;
     }
   }
 
@@ -707,24 +890,48 @@ export function createTrainingModule(ctx = {}) {
       <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
 
       ${!viewingOther ? `
-      <div class="section-title" style="margin-top:20px">Dauer</div>
+      <div class="section-title" style="margin-top:24px">AI Workout Generator</div>
+      <div class="info-box" style="margin-bottom:14px">
+        Erstellt ein <strong>AI-optimiertes Workout</strong> je nach Trainingsbereich, Dauer und Erfahrungslevel.
+      </div>
+
+      <div class="section-title" style="margin-top:12px">Dauer</div>
       <div class="dur-row" id="trainDurRow">
         ${[15, 30, 45, 60].map((m) => `<button class="btn-dur${m === selectedDuration ? " active" : ""}" data-min="${m}">${m} min</button>`).join("")}
       </div>
 
-      <div class="section-title" style="margin-top:20px">Körperbereich</div>
+      <div class="section-title" style="margin-top:20px">Trainingsbereich</div>
       <div class="chip-row" id="bodyChips">
         ${Object.entries(BODY_LABELS).map(([k, l]) => `<button class="chip${selectedBody.has(k) ? " active" : ""}" data-body="${k}">${l}</button>`).join("")}
       </div>
 
-      <div class="section-title" style="margin-top:20px">Level</div>
+      <div class="section-title" style="margin-top:20px">Erfahrungslevel</div>
       <div class="chip-row" id="levelChips" style="flex-direction:column; gap:8px; display:flex;">
         ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}" style="width:100%; text-align:left; padding:12px 14px;">
           <strong>${LEVEL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${LEVEL_DESC[k]}</span>
         </button>`).join("")}
       </div>
 
-      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">Workout erstellen →</button>
+      <div class="section-title" style="margin-top:20px">Trainingsziel</div>
+      <div class="chip-row" id="goalChips" style="flex-direction:column; gap:8px; display:flex;">
+        ${GOAL_ORDER.map((k) => `<button type="button" class="chip goal-chip${selectedGoal === k ? " active" : ""}" data-goal="${k}" style="width:100%; text-align:left; padding:12px 14px;">
+          <strong>${GOAL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${GOAL_DESC[k]}</span>
+        </button>`).join("")}
+      </div>
+
+      <div class="section-title" style="margin-top:20px">Cardio dazu?</div>
+      <div class="chip-row" id="cardioYesNoRow">
+        <button type="button" class="chip${cardioEnabled === true ? " active" : ""}" data-cardio="yes">Ja</button>
+        <button type="button" class="chip${cardioEnabled === false ? " active" : ""}" data-cardio="no">Nein</button>
+      </div>
+      <div id="cardioOptionsWrap" style="${cardioEnabled === true ? "" : "display:none"}">
+        <div class="sub" style="margin:8px 0 6px">Welche Möglichkeiten? (Mehrfachauswahl — passend wird eine gewählt)</div>
+        <div class="chip-row" id="cardioModChips">
+          ${CARDIO_OPTIONS.map((c) => `<button type="button" class="chip${selectedCardio.has(c.id) ? " active" : ""}" data-cardioid="${c.id}">${c.label}</button>`).join("")}
+        </div>
+      </div>
+
+      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">AI Workout generieren →</button>
       <div id="customWorkoutsSection"></div>
       ` : `<div class="info-box" style="margin-top:16px">Im Owner-Fremdprofil kannst du Historie einsehen/löschen, aber kein Workout für andere starten.</div>`}
     `;
@@ -770,10 +977,45 @@ export function createTrainingModule(ctx = {}) {
         btn.classList.add("active");
       });
     });
+    document.querySelectorAll("#goalChips .goal-chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectedGoal = btn.dataset.goal;
+        document.querySelectorAll("#goalChips .goal-chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
+    document.querySelectorAll("#cardioYesNoRow .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        cardioEnabled = btn.dataset.cardio === "yes";
+        document.querySelectorAll("#cardioYesNoRow .chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const wrap = document.getElementById("cardioOptionsWrap");
+        if (wrap) wrap.style.display = cardioEnabled ? "" : "none";
+        if (!cardioEnabled) selectedCardio = new Set();
+      });
+    });
+    document.querySelectorAll("#cardioModChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.cardioid;
+        if (selectedCardio.has(id)) {
+          selectedCardio.delete(id);
+          btn.classList.remove("active");
+        } else {
+          selectedCardio.add(id);
+          btn.classList.add("active");
+        }
+      });
+    });
     document.getElementById("startTrainingBtn")?.addEventListener("click", () => {
       if (!writeKey()) { alert("Bitte zuerst anmelden."); return; }
       if (!trainingUser) { alert("Bitte Anzeigenamen setzen (Profil)."); return; }
-      if (selectedBody.size === 0 || !selectedLevel) { alert("Bitte mindestens einen Körperbereich und ein Level wählen."); return; }
+      if (selectedBody.size === 0 || !selectedLevel) { alert("Bitte mindestens einen Trainingsbereich und ein Erfahrungslevel wählen."); return; }
+      if (!selectedGoal) { alert("Bitte ein Trainingsziel wählen."); return; }
+      if (cardioEnabled === null) { alert("Bitte wählen: Cardio dazu — Ja oder Nein."); return; }
+      if (cardioEnabled === true && selectedCardio.size === 0) {
+        alert("Bitte mindestens eine Cardio-Möglichkeit wählen.");
+        return;
+      }
       currentWorkoutQueue = buildWorkout();
       currentExerciseIdx = 0;
       completedBodies = new Set();
@@ -995,7 +1237,15 @@ export function createTrainingModule(ctx = {}) {
   async function renderWarmup() {
     hideWorkoutProgress();
     const wrap = document.getElementById("trainingContent");
+    const goalLabel = GOAL_LABELS[selectedGoal] || selectedGoal;
+    const cardioNote = cardioEnabled === true && selectedCardio.size
+      ? ` · Cardio-Finisher möglich (${[...selectedCardio].map((id) => CARDIO_OPTIONS.find((c) => c.id === id)?.label || id).join(", ")})`
+      : "";
+    const strengthCount = strengthIdsFromQueue().length;
     wrap.innerHTML = `<div class="section-title">🔥 Aufwärmen (ca. 5 Min.)</div>
+      <div class="info-box" style="margin-bottom:12px">
+        Ziel: <strong>${goalLabel}</strong> · ${strengthCount} Kraft-Übungen${cardioNote}
+      </div>
       <div class="upcoming-wrap">
         <div class="sub" style="color:#999;margin-bottom:10px">Bevor es losgeht, kurz aufwärmen – hier ein paar Beispiele:</div>
         <ul style="margin:0 0 16px 0;padding-left:20px;color:#ddd;line-height:1.7">
@@ -1016,10 +1266,20 @@ export function createTrainingModule(ctx = {}) {
     const wrap = document.getElementById("trainingContent");
     const savedDuration = parseInt(localStorage.getItem("kg_rest_duration")) || 90;
     let remaining = savedDuration;
+    const next = currentWorkoutQueue[currentExerciseIdx];
+    const nextName = next?.name || "Nächste Übung";
+    const setupHint = exerciseSetupHint(next);
+    const nextBody = next && !isCardioStep(next) ? (BODY_LABELS[next.body] || next.body) : (isCardioStep(next) ? "Cardio" : "");
 
     wrap.innerHTML = `<div class="section-title">Pause</div>
+      <div class="rest-next-card">
+        <div class="rest-next-label">Als Nächstes</div>
+        ${nextBody ? `<div class="rest-next-body">${nextBody}</div>` : ""}
+        <div class="rest-next-name">${nextName}</div>
+        ${setupHint ? `<div class="rest-next-hint">${setupHint}</div>` : ""}
+        <div class="sub" style="margin-top:8px">Pause nutzen: Gerät umbauen, Griff wechseln, Rack/Jammer vorbereiten.</div>
+      </div>
       <div class="upcoming-wrap" style="text-align:center">
-        <div class="sub" style="margin-bottom:8px">Nächste Übung: ${currentWorkoutQueue[currentExerciseIdx]?.name || ""}</div>
         <div id="restTimerDisplay" style="font-family:'Bebas Neue',sans-serif;font-size:64px;letter-spacing:2px;color:#9fe84a;margin:10px 0">${formatRestTime(remaining)}</div>
         <div class="dur-row" id="restDurRow" style="margin-bottom:14px">
           ${[30,60,90,120].map(s=>`<button class="btn-dur${s===savedDuration?" active":""}" data-sec="${s}">${s}s</button>`).join("")}
@@ -1096,13 +1356,42 @@ export function createTrainingModule(ctx = {}) {
           ${renderMuscleSVG(bodyList)}
           ${bodyNamesHTML}
         </div>
-        <button id="restartTrainingBtn" class="btn-main btn-dark" style="margin-top:16px">Neues Workout erstellen</button>`;
+        <button id="restartTrainingBtn" class="btn-main btn-dark" style="margin-top:16px">Neues AI Workout generieren</button>`;
       document.getElementById("restartTrainingBtn").addEventListener("click", renderTrainingSetup);
       return;
     }
     updateGrowthMvpInitialized(false);
     setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
     const ex = currentWorkoutQueue[currentExerciseIdx];
+
+    if (isCardioStep(ex)) {
+      wrap.innerHTML = `<div class="upcoming-wrap">
+        <div class="upcoming-title">Cardio-Finisher</div>
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${ex.name}</div>
+        <div class="info-box" style="margin-bottom:14px">${ex.note || `${ex.minutes} Min. ${ex.name}`}</div>
+        <div class="sub" style="margin-bottom:16px">Kein Gewichtslog — einfach die Zeit absolvieren und fertig tippen.</div>
+        <button id="doneExBtn" class="btn-main btn-lime" style="margin-top:8px">Cardio erledigt →</button>
+        <button id="skipExBtn" class="btn-main btn-dark" style="margin-top:8px">Überspringen</button>
+      </div>`;
+      document.getElementById("doneExBtn").addEventListener("click", async () => {
+        const key = writeKey();
+        showToast(`${ex.name} erledigt.`, "success", 2000);
+        if (key) await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
+        currentExerciseIdx++;
+        if (currentExerciseIdx >= currentWorkoutQueue.length) {
+          if (key) await saveLastWorkout(key, strengthIdsFromQueue());
+          renderTrainingExercise();
+        } else {
+          renderRestTimer();
+        }
+      });
+      document.getElementById("skipExBtn").addEventListener("click", () => {
+        currentExerciseIdx++;
+        renderTrainingExercise();
+      });
+      return;
+    }
+
     const overrides = await getExerciseOverrides();
     const display = getExerciseDisplay(ex, overrides);
     const mediaHTML = renderExerciseMediaHtml(ex, overrides, { compact: true });
@@ -1242,14 +1531,22 @@ export function createTrainingModule(ctx = {}) {
         return;
       }
       try {
-        await push(logRef(key, ex.id), logEntry);
-        showToast(`Übung gespeichert (${currentSets.length} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
+        const result = await persistLogEntry(key, ex.id, logEntry);
+        if (result.queued) {
+          showToast(`Offline gespeichert (${currentSets.length} Sätze) — sync später.`, "info", 2800);
+        } else {
+          showToast(`Übung gespeichert (${currentSets.length} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
+        }
       } catch (err) {
         console.error("Speichern fehlgeschlagen (voller Eintrag):", err, logEntry);
         const { sets, ...fallbackEntry } = logEntry;
         try {
-          await push(logRef(key, ex.id), fallbackEntry);
-          showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
+          const result = await persistLogEntry(key, ex.id, fallbackEntry);
+          if (result.queued) {
+            showToast("Offline gespeichert (ohne Satz-Details) — sync später.", "info", 3500);
+          } else {
+            showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
+          }
         } catch (err2) {
           console.error("Speichern fehlgeschlagen (Fallback ohne sets):", err2, fallbackEntry);
           showToast("Speichern fehlgeschlagen: " + (err2 && err2.message ? err2.message : "Unbekannter Fehler") + ". Bitte Datenbank-Regeln in der Firebase-Konsole prüfen.", "error", 5000);
@@ -1257,10 +1554,10 @@ export function createTrainingModule(ctx = {}) {
         }
       }
       completedBodies.add(ex.body);
-      await saveLastWorkout(key, currentWorkoutQueue.slice(0, currentExerciseIdx + 1).map(e => e.id));
+      await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
       currentExerciseIdx++;
       if (currentExerciseIdx >= currentWorkoutQueue.length) {
-        await saveLastWorkout(key, currentWorkoutQueue.slice(0, currentExerciseIdx).map(e => e.id));
+        await saveLastWorkout(key, strengthIdsFromQueue());
         renderTrainingExercise();
       } else {
         await refreshLastWorkoutBox();
@@ -1300,6 +1597,9 @@ export function createTrainingModule(ctx = {}) {
     get selectedBody() { return selectedBody; },
     get selectedLevel() { return selectedLevel; },
     get selectedDuration() { return selectedDuration; },
+    get selectedGoal() { return selectedGoal; },
+    get cardioEnabled() { return cardioEnabled; },
+    get selectedCardio() { return selectedCardio; },
     get currentWorkoutQueue() { return currentWorkoutQueue; },
     get currentExerciseIdx() { return currentExerciseIdx; },
     get completedBodies() { return completedBodies; },
@@ -1319,6 +1619,8 @@ export function createTrainingModule(ctx = {}) {
     deleteLogEntry,
     getAllUsers,
     saveLastWorkout,
+    flushOfflineQueue,
+    pendingOfflineCount: pendingCount,
     getLastWorkout,
     getCustomWorkouts,
     saveCustomWorkout,

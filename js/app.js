@@ -25,14 +25,58 @@ import { BODY_LABELS } from "./data.js";
 import { createExercisesModule } from "./exercises.js";
 import { createTrainingModule } from "./training.js";
 import { createReservationsModule } from "./reservations.js";
+import {
+  registerServiceWorker,
+  onConnectivityChange,
+  isOnline,
+  pendingCount
+} from "./offline.js";
 
 const OWNER_PIN = "1234";
 
 const statusRef = ref(db, "gym/status");
 const scheduleRef = ref(db, "gym/schedule");
 
-window.addEventListener("offline", () => showToast("Keine Internetverbindung – Änderungen werden ggf. nicht gespeichert.", "error", 5000));
-window.addEventListener("online", () => showToast("Verbindung wiederhergestellt.", "success", 2500));
+window.addEventListener("offline", () => {
+  updateOfflineBanner();
+  showToast("Offline — Training funktioniert lokal, Sync später.", "info", 4500);
+});
+window.addEventListener("online", () => {
+  updateOfflineBanner();
+  showToast("Wieder online — synchronisiere…", "success", 2500);
+  flushTrainingOfflineQueue();
+});
+
+function updateOfflineBanner() {
+  const el = document.getElementById("offlineBanner");
+  if (!el) return;
+  const offline = !isOnline();
+  el.hidden = !offline;
+  if (offline) {
+    pendingCount().then((n) => {
+      el.textContent = n > 0
+        ? `Offline-Modus · ${n} Einträge warten auf Sync`
+        : "Offline-Modus · Training lokal nutzbar";
+    }).catch(() => {
+      el.textContent = "Offline-Modus · Training lokal nutzbar";
+    });
+  }
+}
+
+async function flushTrainingOfflineQueue() {
+  if (!isOnline() || !trainingModule.flushOfflineQueue) return;
+  try {
+    const { synced, remaining } = await trainingModule.flushOfflineQueue();
+    updateOfflineBanner();
+    if (synced > 0) {
+      showToast(`${synced} Offline-Einträge synchronisiert.`, "success", 3000);
+    } else if (remaining > 0) {
+      showToast(`${remaining} Einträge noch ausstehend.`, "info", 3000);
+    }
+  } catch (err) {
+    trackError(err, { source: "offline.sync" });
+  }
+}
 
 let currentStatus = null;
 let currentSchedule = {};
@@ -346,6 +390,8 @@ async function boot() {
   initFaqListeners();
   initNav();
   updateOwnerUI();
+  updateOfflineBanner();
+  registerServiceWorker().catch(() => {});
 
   initAuthPanel({
     showToast,
@@ -379,24 +425,39 @@ async function boot() {
     });
 
     await ensureSchemaVersion();
-    trackEvent("boot_ready");
+    trackEvent("boot_ready", { online: isOnline() });
+    if (isOnline()) flushTrainingOfflineQueue();
   } catch (err) {
     trackError(err, { source: "boot.auth" });
-    showToast(err?.message || "Anmeldung fehlgeschlagen – App läuft eingeschränkt.", "error", 5000);
+    // Offline / no network: keep UI usable with cached auth if any
+    watchAuth();
+    if (!isOnline()) {
+      showToast("Offline gestartet — Training mit gespeichertem Konto möglich.", "info", 4500);
+    } else {
+      showToast(err?.message || "Anmeldung fehlgeschlagen – App läuft eingeschränkt.", "error", 5000);
+    }
   }
 
-  onValue(statusRef, (snap) => {
-    currentStatus = snap.val();
-    renderAll();
-  });
-  onValue(scheduleRef, (snap) => {
-    currentSchedule = snap.val() || {};
-    renderAll();
-    if (activeTab === "reserve") renderReservePage();
-  });
+  try {
+    onValue(statusRef, (snap) => {
+      currentStatus = snap.val();
+      renderAll();
+    });
+    onValue(scheduleRef, (snap) => {
+      currentSchedule = snap.val() || {};
+      renderAll();
+      if (activeTab === "reserve") renderReservePage();
+    });
+  } catch (err) {
+    trackError(err, { source: "boot.listeners" });
+  }
   setInterval(renderAll, 60000);
 
   loadCustomExercises();
+  onConnectivityChange({
+    onOnline: () => flushTrainingOfflineQueue(),
+    onOffline: () => updateOfflineBanner()
+  });
 }
 
 boot();
