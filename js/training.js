@@ -212,6 +212,64 @@ export function createTrainingModule(ctx = {}) {
   let currentExerciseIdx = 0;
   let completedBodies = new Set();
   let currentSets = []; // Saetze der aktuell angezeigten Uebung: [{weight, reps}, ...]
+  let sessionOverrides = {};
+  const ACTIVE_SESSION_KEY = "kg_active_training_session_v1";
+
+  function saveActiveSession() {
+    try {
+      const payload = {
+        selectedDuration,
+        selectedGoal,
+        cardioEnabled,
+        selectedCardio: [...selectedCardio],
+        queue: currentWorkoutQueue,
+        index: currentExerciseIdx,
+        completedBodies: [...completedBodies],
+        savedAt: Date.now()
+      };
+      localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore localStorage errors
+    }
+  }
+
+  function clearActiveSession() {
+    try {
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  function hasActiveSession() {
+    try {
+      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (!raw) return false;
+      const s = JSON.parse(raw);
+      return !!(s && Array.isArray(s.queue) && s.queue.length);
+    } catch {
+      return false;
+    }
+  }
+
+  function restoreActiveSession() {
+    try {
+      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (!raw) return false;
+      const s = JSON.parse(raw);
+      if (!s || !Array.isArray(s.queue) || !s.queue.length) return false;
+      currentWorkoutQueue = s.queue;
+      currentExerciseIdx = Math.max(0, Number(s.index || 0));
+      completedBodies = new Set(Array.isArray(s.completedBodies) ? s.completedBodies : []);
+      if (Number.isFinite(s.selectedDuration)) selectedDuration = s.selectedDuration;
+      if (s.selectedGoal) selectedGoal = s.selectedGoal;
+      cardioEnabled = s.cardioEnabled === true ? true : (s.cardioEnabled === false ? false : null);
+      selectedCardio = new Set(Array.isArray(s.selectedCardio) ? s.selectedCardio : []);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   const WARMUP_EXAMPLES = [
     "Hyperextensions am Ab & Back Trainer – 1 x 12 (locker, ohne Zusatzgewicht)",
@@ -357,6 +415,10 @@ export function createTrainingModule(ctx = {}) {
 
   async function loadLogTree(key) {
     if (!key) return {};
+    if (!isOnline()) {
+      const cached = await readCachedLogTree(key);
+      return cached || {};
+    }
     try {
       const snap = await get(ref(db, Paths.logs(key)));
       const val = snap.val() || {};
@@ -738,14 +800,16 @@ export function createTrainingModule(ctx = {}) {
       });
     });
     wrap.querySelectorAll(".start-custom-workout-btn").forEach(btn => {
-      btn.addEventListener("click", (e) => {
+      btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const w = saved.find(x => x.id === btn.dataset.workoutid);
         if (!w) return;
         currentWorkoutQueue = (w.exerciseIds || []).map(id => findExercise(id)).filter(Boolean);
         if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
+        sessionOverrides = await getExerciseOverrides();
         currentExerciseIdx = 0;
         completedBodies = new Set();
+        saveActiveSession();
         renderWarmup();
       });
     });
@@ -894,6 +958,12 @@ export function createTrainingModule(ctx = {}) {
       <div class="info-box" style="margin-bottom:14px">
         Erstellt ein <strong>AI-optimiertes Workout</strong> je nach Trainingsbereich, Dauer und Erfahrungslevel.
       </div>
+      ${hasActiveSession()
+        ? `<div class="info-box" style="margin-bottom:14px">
+            Ein Training ist lokal zwischengespeichert.
+            <button id="resumeTrainingBtn" class="btn-main btn-dark" style="margin-top:8px">Training fortsetzen</button>
+          </div>`
+        : ""}
 
       <div class="section-title" style="margin-top:12px">Dauer</div>
       <div class="dur-row" id="trainDurRow">
@@ -1006,7 +1076,7 @@ export function createTrainingModule(ctx = {}) {
         }
       });
     });
-    document.getElementById("startTrainingBtn")?.addEventListener("click", () => {
+    document.getElementById("startTrainingBtn")?.addEventListener("click", async () => {
       if (!writeKey()) { alert("Bitte zuerst anmelden."); return; }
       if (!trainingUser) { alert("Bitte Anzeigenamen setzen (Profil)."); return; }
       if (selectedBody.size === 0 || !selectedLevel) { alert("Bitte mindestens einen Trainingsbereich und ein Erfahrungslevel wählen."); return; }
@@ -1016,10 +1086,20 @@ export function createTrainingModule(ctx = {}) {
         alert("Bitte mindestens eine Cardio-Möglichkeit wählen.");
         return;
       }
+      sessionOverrides = await getExerciseOverrides();
       currentWorkoutQueue = buildWorkout();
       currentExerciseIdx = 0;
       completedBodies = new Set();
+      saveActiveSession();
       renderWarmup();
+    });
+    document.getElementById("resumeTrainingBtn")?.addEventListener("click", async () => {
+      if (!restoreActiveSession()) {
+        showToast("Kein gespeichertes Training gefunden.", "error", 2500);
+        return;
+      }
+      sessionOverrides = await getExerciseOverrides();
+      renderTrainingExercise();
     });
     document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
       const key = readKey();
@@ -1340,8 +1420,12 @@ export function createTrainingModule(ctx = {}) {
       wrap.innerHTML = requireLoginHtml();
       return;
     }
+    if ((!currentWorkoutQueue || currentWorkoutQueue.length === 0) && hasActiveSession()) {
+      restoreActiveSession();
+    }
     if (currentExerciseIdx >= currentWorkoutQueue.length) {
       hideWorkoutProgress();
+      clearActiveSession();
       const bodyList = [...completedBodies];
       const bodyNamesHTML = bodyList.length
         ? `<ul style="margin:10px 0 0;padding-left:18px;color:#ddd;line-height:1.6">${bodyList.map(b=>`<li>${BODY_LABELS[b]||b}</li>`).join("")}</ul>`
@@ -1378,6 +1462,7 @@ export function createTrainingModule(ctx = {}) {
         showToast(`${ex.name} erledigt.`, "success", 2000);
         if (key) await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
         currentExerciseIdx++;
+        saveActiveSession();
         if (currentExerciseIdx >= currentWorkoutQueue.length) {
           if (key) await saveLastWorkout(key, strengthIdsFromQueue());
           renderTrainingExercise();
@@ -1387,12 +1472,16 @@ export function createTrainingModule(ctx = {}) {
       });
       document.getElementById("skipExBtn").addEventListener("click", () => {
         currentExerciseIdx++;
+        saveActiveSession();
         renderTrainingExercise();
       });
       return;
     }
 
-    const overrides = await getExerciseOverrides();
+    const overrides = Object.keys(sessionOverrides || {}).length
+      ? sessionOverrides
+      : await getExerciseOverrides();
+    sessionOverrides = overrides || {};
     const display = getExerciseDisplay(ex, overrides);
     const mediaHTML = renderExerciseMediaHtml(ex, overrides, { compact: true });
     const instrHTML = display.steps.length ? `
@@ -1556,6 +1645,7 @@ export function createTrainingModule(ctx = {}) {
       completedBodies.add(ex.body);
       await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
       currentExerciseIdx++;
+      saveActiveSession();
       if (currentExerciseIdx >= currentWorkoutQueue.length) {
         await saveLastWorkout(key, strengthIdsFromQueue());
         renderTrainingExercise();
@@ -1564,7 +1654,11 @@ export function createTrainingModule(ctx = {}) {
         renderRestTimer();
       }
     });
-    document.getElementById("skipExBtn").addEventListener("click", () => { currentExerciseIdx++; renderTrainingExercise(); });
+    document.getElementById("skipExBtn").addEventListener("click", () => {
+      currentExerciseIdx++;
+      saveActiveSession();
+      renderTrainingExercise();
+    });
 
     const last = await getLastLog(readKey() || writeKey(), ex.id);
     const reco = computeRecommendation(last, ex);
