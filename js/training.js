@@ -213,7 +213,36 @@ export function createTrainingModule(ctx = {}) {
   let completedBodies = new Set();
   let currentSets = []; // Saetze der aktuell angezeigten Uebung: [{weight, reps}, ...]
   let sessionOverrides = {};
+  /** Once true, never block the exercise UI on a network overrides fetch. */
+  let sessionOverridesReady = false;
   const ACTIVE_SESSION_KEY = "kg_active_training_session_v1";
+  const OVERRIDES_CACHE_KEY = "kg_exercise_overrides_cache_v1";
+
+  function readOverridesCacheSync() {
+    try {
+      return JSON.parse(localStorage.getItem(OVERRIDES_CACHE_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  async function prepareSessionOverrides() {
+    try {
+      sessionOverrides = (await getExerciseOverrides()) || {};
+    } catch {
+      sessionOverrides = readOverridesCacheSync();
+    }
+    sessionOverridesReady = true;
+    return sessionOverrides;
+  }
+
+  /** Sync only — never awaits Firebase (warmup → exercise must work offline). */
+  function overridesForExerciseUi() {
+    if (sessionOverridesReady) return sessionOverrides || {};
+    sessionOverrides = readOverridesCacheSync();
+    sessionOverridesReady = true;
+    return sessionOverrides;
+  }
 
   function saveActiveSession() {
     try {
@@ -225,6 +254,8 @@ export function createTrainingModule(ctx = {}) {
         queue: currentWorkoutQueue,
         index: currentExerciseIdx,
         completedBodies: [...completedBodies],
+        sessionOverrides: sessionOverrides || {},
+        sessionOverridesReady: true,
         savedAt: Date.now()
       };
       localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(payload));
@@ -239,6 +270,7 @@ export function createTrainingModule(ctx = {}) {
     } catch {
       // ignore
     }
+    sessionOverridesReady = false;
   }
 
   function hasActiveSession() {
@@ -265,6 +297,13 @@ export function createTrainingModule(ctx = {}) {
       if (s.selectedGoal) selectedGoal = s.selectedGoal;
       cardioEnabled = s.cardioEnabled === true ? true : (s.cardioEnabled === false ? false : null);
       selectedCardio = new Set(Array.isArray(s.selectedCardio) ? s.selectedCardio : []);
+      if (s.sessionOverrides && typeof s.sessionOverrides === "object") {
+        sessionOverrides = s.sessionOverrides;
+        sessionOverridesReady = true;
+      } else {
+        sessionOverrides = readOverridesCacheSync();
+        sessionOverridesReady = true;
+      }
       return true;
     } catch {
       return false;
@@ -413,6 +452,13 @@ export function createTrainingModule(ctx = {}) {
     return { ...a, ...b };
   }
 
+  function firebaseGetWithTimeout(dbRef, ms = 2000) {
+    return Promise.race([
+      get(dbRef),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms))
+    ]);
+  }
+
   async function loadLogTree(key) {
     if (!key) return {};
     if (!isOnline()) {
@@ -420,7 +466,7 @@ export function createTrainingModule(ctx = {}) {
       return cached || {};
     }
     try {
-      const snap = await get(ref(db, Paths.logs(key)));
+      const snap = await firebaseGetWithTimeout(ref(db, Paths.logs(key)));
       const val = snap.val() || {};
       cacheLogTree(key, val).catch(() => {});
       return val;
@@ -599,8 +645,12 @@ export function createTrainingModule(ctx = {}) {
   }
 
   async function getLastWorkout(key) {
+    if (!key) return null;
+    if (!isOnline()) {
+      return (await readCachedLastWorkout(key)) || null;
+    }
     try {
-      const snap = await get(lastWorkoutRef(key));
+      const snap = await firebaseGetWithTimeout(lastWorkoutRef(key));
       const val = snap.val();
       if (val) {
         cacheLastWorkout(key, val).catch(() => {});
@@ -609,7 +659,7 @@ export function createTrainingModule(ctx = {}) {
       // Legacy name fallback for own account only
       const { isOwner } = account();
       if (!isOwner && trainingUser && safeUserKey(trainingUser) !== key) {
-        const legacy = await get(lastWorkoutRef(safeUserKey(trainingUser)));
+        const legacy = await firebaseGetWithTimeout(lastWorkoutRef(safeUserKey(trainingUser)));
         const legacyVal = legacy.val();
         if (legacyVal) cacheLastWorkout(key, legacyVal).catch(() => {});
         return legacyVal;
@@ -806,7 +856,7 @@ export function createTrainingModule(ctx = {}) {
         if (!w) return;
         currentWorkoutQueue = (w.exerciseIds || []).map(id => findExercise(id)).filter(Boolean);
         if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
-        sessionOverrides = await getExerciseOverrides();
+        await prepareSessionOverrides();
         currentExerciseIdx = 0;
         completedBodies = new Set();
         saveActiveSession();
@@ -1086,7 +1136,7 @@ export function createTrainingModule(ctx = {}) {
         alert("Bitte mindestens eine Cardio-Möglichkeit wählen.");
         return;
       }
-      sessionOverrides = await getExerciseOverrides();
+      await prepareSessionOverrides();
       currentWorkoutQueue = buildWorkout();
       currentExerciseIdx = 0;
       completedBodies = new Set();
@@ -1098,7 +1148,7 @@ export function createTrainingModule(ctx = {}) {
         showToast("Kein gespeichertes Training gefunden.", "error", 2500);
         return;
       }
-      sessionOverrides = await getExerciseOverrides();
+      if (!sessionOverridesReady) await prepareSessionOverrides();
       renderTrainingExercise();
     });
     document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
@@ -1317,7 +1367,7 @@ export function createTrainingModule(ctx = {}) {
   async function renderWarmup() {
     hideWorkoutProgress();
     const wrap = document.getElementById("trainingContent");
-    const goalLabel = GOAL_LABELS[selectedGoal] || selectedGoal;
+    const goalLabel = GOAL_LABELS[selectedGoal] || selectedGoal || "Eigenes Workout";
     const cardioNote = cardioEnabled === true && selectedCardio.size
       ? ` · Cardio-Finisher möglich (${[...selectedCardio].map((id) => CARDIO_OPTIONS.find((c) => c.id === id)?.label || id).join(", ")})`
       : "";
@@ -1334,7 +1384,21 @@ export function createTrainingModule(ctx = {}) {
         <button id="startExercisesBtn" class="btn-main btn-lime">Weiter zu den Übungen →</button>
       </div>`;
     document.getElementById("startExercisesBtn").addEventListener("click", () => {
-      renderTrainingExercise();
+      const btn = document.getElementById("startExercisesBtn");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Lade Übungen…";
+      }
+      Promise.resolve()
+        .then(() => renderTrainingExercise())
+        .catch((err) => {
+          console.error("startExercises", err);
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "Weiter zu den Übungen →";
+          }
+          showToast("Übung konnte nicht geladen werden. Bitte erneut tippen.", "error", 4000);
+        });
     });
   }
 
@@ -1478,10 +1542,14 @@ export function createTrainingModule(ctx = {}) {
       return;
     }
 
-    const overrides = Object.keys(sessionOverrides || {}).length
-      ? sessionOverrides
-      : await getExerciseOverrides();
-    sessionOverrides = overrides || {};
+    if (!ex || !ex.id) {
+      showToast("Übung fehlt in der Session — bitte Training neu starten.", "error", 3500);
+      renderTrainingSetup();
+      return;
+    }
+
+    // Never await network here: offline after warmup must stay responsive.
+    const overrides = overridesForExerciseUi();
     const display = getExerciseDisplay(ex, overrides);
     const mediaHTML = renderExerciseMediaHtml(ex, overrides, { compact: true });
     const instrHTML = display.steps.length ? `
