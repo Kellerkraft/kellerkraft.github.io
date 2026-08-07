@@ -326,7 +326,9 @@ function switchTab(tab) {
   document.getElementById("page-" + tab).classList.add("active");
   document.querySelectorAll(".bottom-tab").forEach((i) => i.classList.toggle("active", i.dataset.tab === tab));
   document.getElementById("navLabel").textContent = NAV_LABELS[tab];
-  window.scrollTo(0, 0);
+  const scrollRoot = document.querySelector(".wrap");
+  if (scrollRoot) scrollRoot.scrollTop = 0;
+  else window.scrollTo(0, 0);
   trackEvent("tab_switch", { tab });
   if (tab === "reserve") renderReservePage();
   if (tab === "home") renderAll();
