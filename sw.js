@@ -1,5 +1,5 @@
 /* Keller Gym — Service Worker (offline training MVP) */
-const CACHE_VERSION = "kg-offline-v6";
+const CACHE_VERSION = "kg-offline-v7";
 const PRECACHE = [
   "./",
   "./index.html",

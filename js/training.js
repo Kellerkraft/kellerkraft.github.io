@@ -126,6 +126,66 @@ export function createTrainingModule(ctx = {}) {
     ruecken: ["b-lat-l", "b-lat-r", "b-trap", "b-lower"]
   };
 
+  function setsVolumeKg(sets) {
+    if (!Array.isArray(sets) || !sets.length) return 0;
+    return sets.reduce((sum, s) => {
+      const w = Number(s?.weight) || 0;
+      const r = Number(s?.reps) || 0;
+      return sum + (w * r);
+    }, 0);
+  }
+
+  function formatMovedKg(kg) {
+    const n = Math.round(Number(kg) || 0);
+    return n.toLocaleString("de-DE");
+  }
+
+  function renderWorkoutCompleteSummary({ finishedCount, bodyList, volumeKg, setCount }) {
+    const regions = bodyList.map((b) => BODY_LABELS[b] || b);
+    const regionChips = regions.length
+      ? `<div class="workout-body-chips">${regions.map((label) =>
+          `<span class="workout-body-chip">${label}</span>`
+        ).join("")}</div>`
+      : `<div class="sub" style="margin-top:10px">Keine Muskelgruppe erfasst.</div>`;
+
+    return `
+      <div class="workout-complete">
+        <div class="workout-complete-kicker">Session beendet</div>
+        <div class="workout-complete-title">Starke Einheit</div>
+        <div class="sub workout-complete-sub">${finishedCount} Übung${finishedCount === 1 ? "" : "en"} abgeschlossen</div>
+
+        <div class="workout-tonnage-card">
+          <div class="workout-tonnage-label">Bewegte Last</div>
+          <div class="workout-tonnage-value">${formatMovedKg(volumeKg)} <span>kg</span></div>
+          <div class="workout-tonnage-hint">Summe aus Gewicht × Wiederholungen aller Sätze</div>
+        </div>
+
+        <div class="workout-stat-row">
+          <div class="workout-stat">
+            <div class="workout-stat-value">${finishedCount}</div>
+            <div class="workout-stat-label">Übungen</div>
+          </div>
+          <div class="workout-stat">
+            <div class="workout-stat-value">${setCount}</div>
+            <div class="workout-stat-label">Sätze</div>
+          </div>
+          <div class="workout-stat">
+            <div class="workout-stat-value">${regions.length}</div>
+            <div class="workout-stat-label">Regionen</div>
+          </div>
+        </div>
+
+        <div class="workout-muscle-panel">
+          <div class="workout-muscle-heading">Trainierte Körperregionen</div>
+          ${renderMuscleSVG(bodyList)}
+          ${regionChips}
+        </div>
+
+        <button id="restartTrainingBtn" class="btn-main btn-lime" style="margin-top:18px">Neues Workout starten →</button>
+        <button id="backFromCompleteBtn" class="btn-main btn-dark" style="margin-top:8px">Zur Trainingsübersicht</button>
+      </div>`;
+  }
+
   function renderMuscleSVG(activeBodies) {
     const frontIds = new Set();
     const backIds = new Set();
@@ -139,8 +199,9 @@ export function createTrainingModule(ctx = {}) {
     return `
       <div class="muscle-view-grid">
         <div class="muscle-view-card">
-          <div class="muscle-view-label">Vorderansicht</div>
-          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+          <div class="muscle-view-label">Vorne</div>
+          <div class="muscle-svg-frame">
+          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <ellipse class="muscle-static" cx="100" cy="32" rx="16" ry="19"/>
             <path class="muscle-static" d="M92,48 L108,48 L109,60 L91,60 Z"/>
             <path class="muscle${fA('f-shoulder-l')}" id="f-shoulder-l" d="M60,62 Q45,60 40,72 Q38,82 46,88 L60,80 Z"/>
@@ -157,10 +218,12 @@ export function createTrainingModule(ctx = {}) {
             <path class="muscle${fA('f-calf-l')}" id="f-calf-l" d="M80,272 L94,272 L91,340 L82,340 Z"/>
             <path class="muscle${fA('f-calf-r')}" id="f-calf-r" d="M120,272 L106,272 L109,340 L118,340 Z"/>
           </svg>
+          </div>
         </div>
         <div class="muscle-view-card">
-          <div class="muscle-view-label">Rückansicht</div>
-          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
+          <div class="muscle-view-label">Hinten</div>
+          <div class="muscle-svg-frame">
+          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
             <ellipse class="muscle-static" cx="100" cy="32" rx="16" ry="19"/>
             <path class="muscle${bA('b-trap')}" id="b-trap" d="M78,50 L122,50 L128,72 L100,80 L72,72 Z"/>
             <path class="muscle${bA('b-shoulder-l')}" id="b-shoulder-l" d="M60,64 Q45,62 40,74 Q38,84 46,90 L60,82 Z"/>
@@ -179,9 +242,13 @@ export function createTrainingModule(ctx = {}) {
             <path class="muscle${bA('b-calf-l')}" id="b-calf-l" d="M80,272 L94,272 L91,340 L82,340 Z"/>
             <path class="muscle${bA('b-calf-r')}" id="b-calf-r" d="M120,272 L106,272 L109,340 L118,340 Z"/>
           </svg>
+          </div>
         </div>
       </div>
-      <div class="muscle-legend"><span class="legend-dot active"></span> Trainiert <span class="legend-dot" style="margin-left:14px"></span> Nicht trainiert</div>`;
+      <div class="muscle-legend">
+        <span class="muscle-legend-item"><span class="legend-dot active"></span> Trainiert</span>
+        <span class="muscle-legend-item"><span class="legend-dot"></span> Pause</span>
+      </div>`;
   }
   function setWorkoutProgress(current, total) {
     const bar = document.getElementById("workoutProgressBar");
@@ -324,6 +391,9 @@ export function createTrainingModule(ctx = {}) {
   let sessionPhase = "exercise";
   let pendingRestoredSets = null;
   let sessionAutosaveBound = false;
+  /** Summe Gewicht×Wdh. über alle protokollierten Sätze dieser Session */
+  let sessionVolumeKg = 0;
+  let sessionSetCount = 0;
   const ACTIVE_SESSION_KEY = "kg_active_training_session_v1";
   const OVERRIDES_CACHE_KEY = "kg_exercise_overrides_cache_v1";
   const SESSION_MAX_AGE_MS = 18 * 60 * 60 * 1000;
@@ -372,6 +442,8 @@ export function createTrainingModule(ctx = {}) {
         completedBodies: [...completedBodies],
         currentSets: Array.isArray(currentSets) ? currentSets : [],
         phase: sessionPhase || "exercise",
+        sessionVolumeKg: Number(sessionVolumeKg) || 0,
+        sessionSetCount: Number(sessionSetCount) || 0,
         sessionOverrides: sessionOverrides || {},
         sessionOverridesReady: true,
         savedAt: Date.now()
@@ -392,6 +464,8 @@ export function createTrainingModule(ctx = {}) {
     sessionPhase = "exercise";
     pendingRestoredSets = null;
     currentSets = [];
+    sessionVolumeKg = 0;
+    sessionSetCount = 0;
   }
 
   function readStoredSession() {
@@ -444,6 +518,8 @@ export function createTrainingModule(ctx = {}) {
       sessionPhase = (s.phase === "warmup" || s.phase === "rest" || s.phase === "exercise")
         ? s.phase
         : "exercise";
+      sessionVolumeKg = Number.isFinite(Number(s.sessionVolumeKg)) ? Number(s.sessionVolumeKg) : 0;
+      sessionSetCount = Number.isFinite(Number(s.sessionSetCount)) ? Number(s.sessionSetCount) : 0;
       if (s.sessionOverrides && typeof s.sessionOverrides === "object") {
         sessionOverrides = s.sessionOverrides;
         sessionOverridesReady = true;
@@ -478,6 +554,8 @@ export function createTrainingModule(ctx = {}) {
     currentWorkoutQueue = [];
     currentExerciseIdx = 0;
     completedBodies = new Set();
+    sessionVolumeKg = 0;
+    sessionSetCount = 0;
     clearActiveSession();
   }
 
@@ -1046,6 +1124,8 @@ export function createTrainingModule(ctx = {}) {
         completedBodies = new Set();
         currentSets = [];
         pendingRestoredSets = null;
+        sessionVolumeKg = 0;
+        sessionSetCount = 0;
         sessionPhase = "warmup";
         saveActiveSession();
         renderWarmup();
@@ -1332,6 +1412,8 @@ export function createTrainingModule(ctx = {}) {
       completedBodies = new Set();
       currentSets = [];
       pendingRestoredSets = null;
+      sessionVolumeKg = 0;
+      sessionSetCount = 0;
       sessionPhase = "warmup";
       saveActiveSession();
       renderWarmup();
@@ -1829,24 +1911,23 @@ export function createTrainingModule(ctx = {}) {
       hideWorkoutProgress();
       const finishedCount = currentWorkoutQueue.length;
       const bodyList = [...completedBodies];
+      const volumeKg = sessionVolumeKg;
+      const setCount = sessionSetCount;
       currentWorkoutQueue = [];
       currentExerciseIdx = 0;
       clearActiveSession();
-      const bodyNamesHTML = bodyList.length
-        ? `<ul style="margin:10px 0 0;padding-left:18px;color:#ddd;line-height:1.6">${bodyList.map(b=>`<li>${BODY_LABELS[b]||b}</li>`).join("")}</ul>`
-        : `<div class="sub" style="margin-top:8px">Keine Muskelgruppe erfasst.</div>`;
       if (!growthMvpInitialized && trainingUser) {
         updateGrowthMvpInitialized(true);
         await recordWorkoutCompletion(trainingUser, finishedCount);
       }
-      wrap.innerHTML = `<div class="section-title">Fertig! 🎉</div><div class="info-box">Workout abgeschlossen, ${finishedCount} Übungen protokolliert.</div>
-        <div class="upcoming-wrap" style="text-align:center">
-          <div class="upcoming-title">Trainierte Muskelgruppen</div>
-          ${renderMuscleSVG(bodyList)}
-          ${bodyNamesHTML}
-        </div>
-        <button id="restartTrainingBtn" class="btn-main btn-dark" style="margin-top:16px">Neues AI Workout generieren</button>`;
-      document.getElementById("restartTrainingBtn").addEventListener("click", renderTrainingSetup);
+      wrap.innerHTML = renderWorkoutCompleteSummary({
+        finishedCount,
+        bodyList,
+        volumeKg,
+        setCount
+      });
+      document.getElementById("restartTrainingBtn")?.addEventListener("click", renderTrainingSetup);
+      document.getElementById("backFromCompleteBtn")?.addEventListener("click", renderTrainingSetup);
       return;
     }
     updateGrowthMvpInitialized(false);
@@ -2074,6 +2155,8 @@ export function createTrainingModule(ctx = {}) {
         }
       }
       completedBodies.add(ex.body);
+      sessionVolumeKg += setsVolumeKg(currentSets);
+      sessionSetCount += currentSets.length;
       await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
       currentExerciseIdx++;
       currentSets = [];
