@@ -600,6 +600,14 @@ img, video, canvas, svg, iframe { max-width: 100%; }
   font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
   color: var(--text-dim); margin-bottom: var(--space-2);
 }
+.exercise-session-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 24px;
+  letter-spacing: 1px;
+  color: var(--text);
+  margin-bottom: 10px;
+  line-height: 1.1;
+}
 .upcoming-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid #1c1c1c; flex-wrap: wrap; }
 .upcoming-row:last-child { border-bottom: none; padding-bottom: 0; }
 .log-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
