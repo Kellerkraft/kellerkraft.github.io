@@ -14,6 +14,16 @@ import {
   syncPendingWrites,
   pendingCount
 } from "./offline.js";
+import {
+  BODYMAP_FRONT_VIEWBOX,
+  BODYMAP_BACK_VIEWBOX,
+  BODYMAP_FRONT_MUSCLES,
+  BODYMAP_FRONT_STATIC,
+  BODYMAP_FRONT_OUTLINE,
+  BODYMAP_BACK_MUSCLES,
+  BODYMAP_BACK_STATIC,
+  BODYMAP_BACK_OUTLINE
+} from "./bodymap-assets.js";
 
 export function createTrainingModule(ctx = {}) {
   const BODY_LABELS = ctx.BODY_LABELS || ctx.bodyLabels || DATA_BODY_LABELS;
@@ -126,63 +136,116 @@ export function createTrainingModule(ctx = {}) {
     ruecken: ["b-lat-l", "b-lat-r", "b-trap", "b-lower"]
   };
 
+  function setsVolumeKg(sets) {
+    if (!Array.isArray(sets) || !sets.length) return 0;
+    return sets.reduce((sum, s) => {
+      const w = Number(s?.weight) || 0;
+      const r = Number(s?.reps) || 0;
+      return sum + (w * r);
+    }, 0);
+  }
+
+  function formatMovedKg(kg) {
+    const n = Math.round(Number(kg) || 0);
+    return n.toLocaleString("de-DE");
+  }
+
+  function renderWorkoutCompleteSummary({ finishedCount, bodyList, volumeKg, setCount }) {
+    const regions = bodyList.map((b) => BODY_LABELS[b] || b);
+    const regionChips = regions.length
+      ? `<div class="workout-body-chips">${regions.map((label) =>
+          `<span class="workout-body-chip">${label}</span>`
+        ).join("")}</div>`
+      : `<div class="sub" style="margin-top:10px">Keine Muskelgruppe erfasst.</div>`;
+
+    return `
+      <div class="workout-complete">
+        <div class="workout-complete-kicker">Session beendet</div>
+        <div class="workout-complete-title">Starke Einheit</div>
+        <div class="sub workout-complete-sub">${finishedCount} Übung${finishedCount === 1 ? "" : "en"} abgeschlossen</div>
+
+        <div class="workout-tonnage-card">
+          <div class="workout-tonnage-label">Bewegte Last</div>
+          <div class="workout-tonnage-value">${formatMovedKg(volumeKg)} <span>kg</span></div>
+          <div class="workout-tonnage-hint">Summe aus Gewicht × Wiederholungen aller Sätze</div>
+        </div>
+
+        <div class="workout-stat-row">
+          <div class="workout-stat">
+            <div class="workout-stat-value">${finishedCount}</div>
+            <div class="workout-stat-label">Übungen</div>
+          </div>
+          <div class="workout-stat">
+            <div class="workout-stat-value">${setCount}</div>
+            <div class="workout-stat-label">Sätze</div>
+          </div>
+          <div class="workout-stat">
+            <div class="workout-stat-value">${regions.length}</div>
+            <div class="workout-stat-label">Regionen</div>
+          </div>
+        </div>
+
+        <div class="workout-muscle-panel">
+          <div class="workout-muscle-heading">Trainierte Körperregionen</div>
+          ${renderMuscleSVG(bodyList)}
+          ${regionChips}
+        </div>
+
+        <button id="restartTrainingBtn" class="btn-main btn-lime" style="margin-top:18px">Neues Workout starten →</button>
+        <button id="backFromCompleteBtn" class="btn-main btn-dark" style="margin-top:8px">Zur Trainingsübersicht</button>
+      </div>`;
+  }
+
   function renderMuscleSVG(activeBodies) {
     const frontIds = new Set();
     const backIds = new Set();
-    activeBodies.forEach(b => {
-      (BODY_TO_FRONT_IDS[b] || []).forEach(id => frontIds.add(id));
-      (BODY_TO_BACK_IDS[b] || []).forEach(id => backIds.add(id));
+    activeBodies.forEach((b) => {
+      (BODY_TO_FRONT_IDS[b] || []).forEach((id) => frontIds.add(id));
+      (BODY_TO_BACK_IDS[b] || []).forEach((id) => backIds.add(id));
     });
-    const fA = id => frontIds.has(id) ? " active" : "";
-    const bA = id => backIds.has(id) ? " active" : "";
+    const cls = (set, id) => (set.has(id) ? "muscle active" : "muscle");
+    const frontStatic = BODYMAP_FRONT_STATIC.map((p) =>
+      `<path class="muscle-static" d="${p.d}"/>`
+    ).join("");
+    const frontMuscles = BODYMAP_FRONT_MUSCLES.map((p) =>
+      `<path class="${cls(frontIds, p.id)}" data-region="${p.id}" d="${p.d}"/>`
+    ).join("");
+    const backStatic = BODYMAP_BACK_STATIC.map((p) =>
+      `<path class="muscle-static" d="${p.d}"/>`
+    ).join("");
+    const backMuscles = BODYMAP_BACK_MUSCLES.map((p) =>
+      `<path class="${cls(backIds, p.id)}" data-region="${p.id}" d="${p.d}"/>`
+    ).join("");
 
     return `
       <div class="muscle-view-grid">
         <div class="muscle-view-card">
-          <div class="muscle-view-label">Vorderansicht</div>
-          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
-            <ellipse class="muscle-static" cx="100" cy="32" rx="16" ry="19"/>
-            <path class="muscle-static" d="M92,48 L108,48 L109,60 L91,60 Z"/>
-            <path class="muscle${fA('f-shoulder-l')}" id="f-shoulder-l" d="M60,62 Q45,60 40,72 Q38,82 46,88 L60,80 Z"/>
-            <path class="muscle${fA('f-shoulder-r')}" id="f-shoulder-r" d="M140,62 Q155,60 160,72 Q162,82 154,88 L140,80 Z"/>
-            <path class="muscle${fA('f-chest')}" id="f-chest" d="M65,64 Q100,58 135,64 L133,104 Q100,112 67,104 Z"/>
-            <path class="muscle${fA('f-abs')}" id="f-abs" d="M70,106 L130,106 L126,160 Q100,166 74,160 Z"/>
-            <path class="muscle${fA('f-bicep-l')}" id="f-bicep-l" d="M44,90 L58,82 L60,120 L48,126 Z"/>
-            <path class="muscle${fA('f-bicep-r')}" id="f-bicep-r" d="M156,90 L142,82 L140,120 L152,126 Z"/>
-            <path class="muscle-static" d="M46,128 L60,122 L58,168 L48,172 Z"/>
-            <path class="muscle-static" d="M154,128 L140,122 L142,168 L152,172 Z"/>
-            <path class="muscle-static" d="M72,162 L128,162 L122,182 Q100,188 78,182 Z"/>
-            <path class="muscle${fA('f-quad-l')}" id="f-quad-l" d="M78,184 L98,182 L95,270 L80,270 Z"/>
-            <path class="muscle${fA('f-quad-r')}" id="f-quad-r" d="M122,184 L102,182 L105,270 L120,270 Z"/>
-            <path class="muscle${fA('f-calf-l')}" id="f-calf-l" d="M80,272 L94,272 L91,340 L82,340 Z"/>
-            <path class="muscle${fA('f-calf-r')}" id="f-calf-r" d="M120,272 L106,272 L109,340 L118,340 Z"/>
-          </svg>
+          <div class="muscle-view-label">Vorne</div>
+          <div class="muscle-svg-frame">
+            <svg class="muscle-svg" viewBox="${BODYMAP_FRONT_VIEWBOX}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path class="muscle-outline" d="${BODYMAP_FRONT_OUTLINE}"/>
+              ${frontStatic}
+              ${frontMuscles}
+            </svg>
+          </div>
         </div>
         <div class="muscle-view-card">
-          <div class="muscle-view-label">Rückansicht</div>
-          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg">
-            <ellipse class="muscle-static" cx="100" cy="32" rx="16" ry="19"/>
-            <path class="muscle${bA('b-trap')}" id="b-trap" d="M78,50 L122,50 L128,72 L100,80 L72,72 Z"/>
-            <path class="muscle${bA('b-shoulder-l')}" id="b-shoulder-l" d="M60,64 Q45,62 40,74 Q38,84 46,90 L60,82 Z"/>
-            <path class="muscle${bA('b-shoulder-r')}" id="b-shoulder-r" d="M140,64 Q155,62 160,74 Q162,84 154,90 L140,82 Z"/>
-            <path class="muscle${bA('b-lat-l')}" id="b-lat-l" d="M62,82 L98,80 L94,140 Q76,146 64,138 Z"/>
-            <path class="muscle${bA('b-lat-r')}" id="b-lat-r" d="M138,82 L102,80 L106,140 Q124,146 136,138 Z"/>
-            <path class="muscle${bA('b-lower')}" id="b-lower" d="M76,142 L124,142 L120,168 Q100,174 80,168 Z"/>
-            <path class="muscle${bA('b-tricep-l')}" id="b-tricep-l" d="M44,92 L58,84 L60,122 L48,128 Z"/>
-            <path class="muscle${bA('b-tricep-r')}" id="b-tricep-r" d="M156,92 L142,84 L140,122 L152,128 Z"/>
-            <path class="muscle-static" d="M46,130 L60,124 L58,170 L48,174 Z"/>
-            <path class="muscle-static" d="M154,130 L140,124 L142,170 L152,174 Z"/>
-            <path class="muscle${bA('b-glute-l')}" id="b-glute-l" d="M74,170 L100,168 L98,196 L76,198 Z"/>
-            <path class="muscle${bA('b-glute-r')}" id="b-glute-r" d="M126,170 L100,168 L102,196 L124,198 Z"/>
-            <path class="muscle${bA('b-ham-l')}" id="b-ham-l" d="M78,198 L98,196 L95,270 L80,270 Z"/>
-            <path class="muscle${bA('b-ham-r')}" id="b-ham-r" d="M122,198 L102,196 L105,270 L120,270 Z"/>
-            <path class="muscle${bA('b-calf-l')}" id="b-calf-l" d="M80,272 L94,272 L91,340 L82,340 Z"/>
-            <path class="muscle${bA('b-calf-r')}" id="b-calf-r" d="M120,272 L106,272 L109,340 L118,340 Z"/>
-          </svg>
+          <div class="muscle-view-label">Hinten</div>
+          <div class="muscle-svg-frame">
+            <svg class="muscle-svg" viewBox="${BODYMAP_BACK_VIEWBOX}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path class="muscle-outline" d="${BODYMAP_BACK_OUTLINE}"/>
+              ${backStatic}
+              ${backMuscles}
+            </svg>
+          </div>
         </div>
       </div>
-      <div class="muscle-legend"><span class="legend-dot active"></span> Trainiert <span class="legend-dot" style="margin-left:14px"></span> Nicht trainiert</div>`;
+      <div class="muscle-legend">
+        <span class="muscle-legend-item"><span class="legend-dot active"></span> Trainiert</span>
+        <span class="muscle-legend-item"><span class="legend-dot"></span> Nicht trainiert</span>
+      </div>`;
   }
+
   function setWorkoutProgress(current, total) {
     const bar = document.getElementById("workoutProgressBar");
     if (!bar) return;
@@ -200,6 +263,111 @@ export function createTrainingModule(ctx = {}) {
   function hideWorkoutProgress() {
     const bar = document.getElementById("workoutProgressBar");
     if (bar) bar.hidden = true;
+    stopSetRestTimer();
+  }
+
+  let setRestTimerInterval = null;
+  let setRestRemaining = 0;
+  let setRestPaused = false;
+
+  function stopSetRestTimer() {
+    clearInterval(setRestTimerInterval);
+    setRestTimerInterval = null;
+    setRestPaused = false;
+    const bar = document.getElementById("setRestBar");
+    if (bar) {
+      bar.hidden = true;
+      bar.classList.remove("is-done");
+    }
+  }
+
+  function getSavedRestDuration() {
+    const saved = parseInt(localStorage.getItem("kg_rest_duration"), 10);
+    return Number.isFinite(saved) && saved > 0 ? saved : 90;
+  }
+
+  function startSetRestTimer({ setNumber } = {}) {
+    clearInterval(setRestTimerInterval);
+    setRestPaused = false;
+    const duration = getSavedRestDuration();
+    setRestRemaining = duration;
+
+    const bar = document.getElementById("setRestBar");
+    const display = document.getElementById("setRestDisplay");
+    const label = document.getElementById("setRestLabel");
+    const pauseBtn = document.getElementById("setRestPauseBtn");
+    const skipBtn = document.getElementById("setRestSkipBtn");
+    const durRow = document.getElementById("setRestDurRow");
+    if (!bar || !display || !pauseBtn || !skipBtn || !durRow) return;
+
+    bar.hidden = false;
+    bar.classList.remove("is-done");
+    if (label) {
+      label.textContent = setNumber
+        ? `Pause nach Satz ${setNumber}`
+        : "Pause bis nächster Satz";
+    }
+    display.textContent = formatRestTime(setRestRemaining);
+    pauseBtn.textContent = "⏸";
+    pauseBtn.setAttribute("aria-label", "Pause pausieren");
+
+    durRow.innerHTML = [30, 60, 90, 120].map((s) =>
+      `<button type="button" class="btn-dur${s === duration ? " active" : ""}" data-sec="${s}">${s}s</button>`
+    ).join("");
+
+    function onFinished() {
+      clearInterval(setRestTimerInterval);
+      setRestTimerInterval = null;
+      setRestRemaining = 0;
+      display.textContent = "0:00";
+      bar.classList.add("is-done");
+      if (label) label.textContent = "Pause vorbei — nächster Satz";
+      showToast("Pause beendet – nächster Satz!", "success", 2500);
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    }
+
+    function tick() {
+      if (setRestPaused) return;
+      setRestRemaining -= 1;
+      if (setRestRemaining <= 0) {
+        onFinished();
+        return;
+      }
+      display.textContent = formatRestTime(setRestRemaining);
+    }
+    setRestTimerInterval = setInterval(tick, 1000);
+
+    durRow.querySelectorAll(".btn-dur").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const sec = parseInt(btn.dataset.sec, 10);
+        if (!Number.isFinite(sec)) return;
+        localStorage.setItem("kg_rest_duration", String(sec));
+        setRestRemaining = sec;
+        bar.classList.remove("is-done");
+        display.textContent = formatRestTime(setRestRemaining);
+        if (label) {
+          label.textContent = setNumber
+            ? `Pause nach Satz ${setNumber}`
+            : "Pause bis nächster Satz";
+        }
+        durRow.querySelectorAll(".btn-dur").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        if (!setRestTimerInterval) {
+          setRestTimerInterval = setInterval(tick, 1000);
+        }
+      });
+    });
+
+    pauseBtn.onclick = () => {
+      if (setRestRemaining <= 0) return;
+      setRestPaused = !setRestPaused;
+      pauseBtn.textContent = setRestPaused ? "▶" : "⏸";
+      pauseBtn.setAttribute("aria-label", setRestPaused ? "Pause fortsetzen" : "Pause pausieren");
+    };
+
+    skipBtn.onclick = () => {
+      stopSetRestTimer();
+    };
   }
   let selectedBody = new Set();
   let selectedLevel = null;
@@ -215,8 +383,16 @@ export function createTrainingModule(ctx = {}) {
   let sessionOverrides = {};
   /** Once true, never block the exercise UI on a network overrides fetch. */
   let sessionOverridesReady = false;
+  /** warmup | exercise | rest — where the athlete left off */
+  let sessionPhase = "exercise";
+  let pendingRestoredSets = null;
+  let sessionAutosaveBound = false;
+  /** Summe Gewicht×Wdh. über alle protokollierten Sätze dieser Session */
+  let sessionVolumeKg = 0;
+  let sessionSetCount = 0;
   const ACTIVE_SESSION_KEY = "kg_active_training_session_v1";
   const OVERRIDES_CACHE_KEY = "kg_exercise_overrides_cache_v1";
+  const SESSION_MAX_AGE_MS = 18 * 60 * 60 * 1000;
 
   function readOverridesCacheSync() {
     try {
@@ -244,7 +420,13 @@ export function createTrainingModule(ctx = {}) {
     return sessionOverrides;
   }
 
+  function isSessionFresh(savedAt) {
+    if (!Number.isFinite(savedAt) || savedAt <= 0) return true;
+    return (Date.now() - savedAt) <= SESSION_MAX_AGE_MS;
+  }
+
   function saveActiveSession() {
+    if (!Array.isArray(currentWorkoutQueue) || currentWorkoutQueue.length === 0) return;
     try {
       const payload = {
         selectedDuration,
@@ -254,6 +436,10 @@ export function createTrainingModule(ctx = {}) {
         queue: currentWorkoutQueue,
         index: currentExerciseIdx,
         completedBodies: [...completedBodies],
+        currentSets: Array.isArray(currentSets) ? currentSets : [],
+        phase: sessionPhase || "exercise",
+        sessionVolumeKg: Number(sessionVolumeKg) || 0,
+        sessionSetCount: Number(sessionSetCount) || 0,
         sessionOverrides: sessionOverrides || {},
         sessionOverridesReady: true,
         savedAt: Date.now()
@@ -271,32 +457,65 @@ export function createTrainingModule(ctx = {}) {
       // ignore
     }
     sessionOverridesReady = false;
+    sessionPhase = "exercise";
+    pendingRestoredSets = null;
+    currentSets = [];
+    sessionVolumeKg = 0;
+    sessionSetCount = 0;
+  }
+
+  function readStoredSession() {
+    try {
+      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s || !Array.isArray(s.queue) || !s.queue.length) return null;
+      if (!isSessionFresh(s.savedAt)) {
+        clearActiveSession();
+        return null;
+      }
+      return s;
+    } catch {
+      return null;
+    }
   }
 
   function hasActiveSession() {
-    try {
-      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
-      if (!raw) return false;
-      const s = JSON.parse(raw);
-      return !!(s && Array.isArray(s.queue) && s.queue.length);
-    } catch {
-      return false;
+    if (
+      Array.isArray(currentWorkoutQueue) &&
+      currentWorkoutQueue.length > 0 &&
+      currentExerciseIdx < currentWorkoutQueue.length
+    ) {
+      return true;
     }
+    return !!readStoredSession();
   }
 
   function restoreActiveSession() {
     try {
-      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
-      if (!raw) return false;
-      const s = JSON.parse(raw);
-      if (!s || !Array.isArray(s.queue) || !s.queue.length) return false;
+      if (Array.isArray(currentWorkoutQueue) && currentWorkoutQueue.length > 0) {
+        return true;
+      }
+      const s = readStoredSession();
+      if (!s) return false;
       currentWorkoutQueue = s.queue;
       currentExerciseIdx = Math.max(0, Number(s.index || 0));
+      if (currentExerciseIdx >= currentWorkoutQueue.length) {
+        currentExerciseIdx = Math.max(0, currentWorkoutQueue.length - 1);
+      }
       completedBodies = new Set(Array.isArray(s.completedBodies) ? s.completedBodies : []);
       if (Number.isFinite(s.selectedDuration)) selectedDuration = s.selectedDuration;
       if (s.selectedGoal) selectedGoal = s.selectedGoal;
       cardioEnabled = s.cardioEnabled === true ? true : (s.cardioEnabled === false ? false : null);
       selectedCardio = new Set(Array.isArray(s.selectedCardio) ? s.selectedCardio : []);
+      const restoredSets = Array.isArray(s.currentSets) ? s.currentSets.filter(Boolean) : [];
+      currentSets = restoredSets;
+      pendingRestoredSets = restoredSets;
+      sessionPhase = (s.phase === "warmup" || s.phase === "rest" || s.phase === "exercise")
+        ? s.phase
+        : "exercise";
+      sessionVolumeKg = Number.isFinite(Number(s.sessionVolumeKg)) ? Number(s.sessionVolumeKg) : 0;
+      sessionSetCount = Number.isFinite(Number(s.sessionSetCount)) ? Number(s.sessionSetCount) : 0;
       if (s.sessionOverrides && typeof s.sessionOverrides === "object") {
         sessionOverrides = s.sessionOverrides;
         sessionOverridesReady = true;
@@ -309,6 +528,46 @@ export function createTrainingModule(ctx = {}) {
       return false;
     }
   }
+
+  function resumeActiveTraining() {
+    if (!restoreActiveSession()) return false;
+    if (sessionPhase === "warmup") {
+      renderWarmup();
+      return true;
+    }
+    if (sessionPhase === "rest") {
+      renderRestTimer();
+      return true;
+    }
+    renderTrainingExercise();
+    return true;
+  }
+
+  function abandonActiveTraining() {
+    clearInterval(restTimerInterval);
+    stopSetRestTimer();
+    hideWorkoutProgress();
+    currentWorkoutQueue = [];
+    currentExerciseIdx = 0;
+    completedBodies = new Set();
+    sessionVolumeKg = 0;
+    sessionSetCount = 0;
+    clearActiveSession();
+  }
+
+  function bindSessionAutosave() {
+    if (sessionAutosaveBound) return;
+    sessionAutosaveBound = true;
+    const persist = () => {
+      if (currentWorkoutQueue.length > 0) saveActiveSession();
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") persist();
+    });
+    window.addEventListener("pagehide", persist);
+    window.addEventListener("beforeunload", persist);
+  }
+  bindSessionAutosave();
 
   const WARMUP_EXAMPLES = [
     "Hyperextensions am Ab & Back Trainer – 1 x 12 (locker, ohne Zusatzgewicht)",
@@ -859,6 +1118,11 @@ export function createTrainingModule(ctx = {}) {
         await prepareSessionOverrides();
         currentExerciseIdx = 0;
         completedBodies = new Set();
+        currentSets = [];
+        pendingRestoredSets = null;
+        sessionVolumeKg = 0;
+        sessionSetCount = 0;
+        sessionPhase = "warmup";
         saveActiveSession();
         renderWarmup();
       });
@@ -1009,9 +1273,11 @@ export function createTrainingModule(ctx = {}) {
         Erstellt ein <strong>AI-optimiertes Workout</strong> je nach Trainingsbereich, Dauer und Erfahrungslevel.
       </div>
       ${hasActiveSession()
-        ? `<div class="info-box" style="margin-bottom:14px">
-            Ein Training ist lokal zwischengespeichert.
-            <button id="resumeTrainingBtn" class="btn-main btn-dark" style="margin-top:8px">Training fortsetzen</button>
+        ? `<div class="info-box resume-session-card" style="margin-bottom:14px">
+            <strong>Offenes Training gefunden</strong>
+            <div class="sub" style="margin-top:6px">Du kannst genau dort weitermachen, wo du aufgehört hast — auch nach App-Wechsel.</div>
+            <button id="resumeTrainingBtn" class="btn-main btn-lime" style="margin-top:10px">Training fortsetzen →</button>
+            <button id="discardTrainingBtn" class="btn-main btn-dark" style="margin-top:8px">Verwerfen &amp; neu starten</button>
           </div>`
         : ""}
 
@@ -1140,16 +1406,26 @@ export function createTrainingModule(ctx = {}) {
       currentWorkoutQueue = buildWorkout();
       currentExerciseIdx = 0;
       completedBodies = new Set();
+      currentSets = [];
+      pendingRestoredSets = null;
+      sessionVolumeKg = 0;
+      sessionSetCount = 0;
+      sessionPhase = "warmup";
       saveActiveSession();
       renderWarmup();
     });
     document.getElementById("resumeTrainingBtn")?.addEventListener("click", async () => {
-      if (!restoreActiveSession()) {
+      if (!resumeActiveTraining()) {
         showToast("Kein gespeichertes Training gefunden.", "error", 2500);
         return;
       }
-      if (!sessionOverridesReady) await prepareSessionOverrides();
-      renderTrainingExercise();
+      showToast("Training fortgesetzt.", "success", 1800);
+    });
+    document.getElementById("discardTrainingBtn")?.addEventListener("click", () => {
+      if (!confirm("Offenes Training wirklich verwerfen?")) return;
+      abandonActiveTraining();
+      showToast("Altes Training verworfen.", "info", 1800);
+      renderTrainingSetup();
     });
     document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
       const key = readKey();
@@ -1241,13 +1517,156 @@ export function createTrainingModule(ctx = {}) {
     });
   }
 
+  function chartThemeColors() {
+    const styles = getComputedStyle(document.documentElement);
+    const read = (name, fallback) => (styles.getPropertyValue(name).trim() || fallback);
+    return {
+      accent: read("--accent-soft", "#cdf98a"),
+      accentFill: read("--accent-glow", "rgba(159, 232, 74, 0.18)"),
+      muted: read("--text-muted", "#999999"),
+      dim: read("--text-dim", "#666666"),
+      grid: read("--border", "#1c1c1c"),
+      text: read("--text-secondary", "#cccccc")
+    };
+  }
+
+  function formatHistoryTrend(entries) {
+    if (!entries.length) return { text: "Noch keine Daten", cls: "" };
+    const first = entries[0];
+    const last = entries[entries.length - 1];
+    const delta = Math.round((Number(last.weight) - Number(first.weight)) * 10) / 10;
+    if (!Number.isFinite(delta) || entries.length < 2) {
+      return { text: "Erste Einträge", cls: "" };
+    }
+    if (delta > 0) return { text: `↑ +${delta} kg`, cls: "is-up" };
+    if (delta < 0) return { text: `↓ ${delta} kg`, cls: "is-down" };
+    return { text: "→ stabil", cls: "" };
+  }
+
+  function renderHistoryProgressChart(canvas, entries) {
+    if (!canvas || typeof Chart === "undefined") return null;
+    const colors = chartThemeColors();
+    const points = entries.slice(-8);
+    const labels = points.map((e) =>
+      new Date(e.date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
+    );
+    const weightData = points.map((e) => Number(e.weight) || 0);
+    const repsData = points.map((e) => Number(e.reps) || 0);
+
+    return new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Gewicht",
+            data: weightData,
+            yAxisID: "yWeight",
+            borderColor: colors.accent,
+            backgroundColor: colors.accentFill,
+            borderWidth: 2.5,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: colors.accent,
+            pointBorderColor: colors.accent,
+            fill: true,
+            tension: 0.35
+          },
+          {
+            label: "Wdh.",
+            data: repsData,
+            yAxisID: "yReps",
+            borderColor: colors.muted,
+            backgroundColor: "transparent",
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            fill: false,
+            tension: 0.35
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 450, easing: "easeOutQuart" },
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "rgba(17,17,17,0.94)",
+            titleColor: colors.text,
+            bodyColor: colors.text,
+            borderColor: colors.grid,
+            borderWidth: 1,
+            padding: 10,
+            displayColors: false,
+            callbacks: {
+              title: (items) => items?.[0]?.label || "",
+              label: (item) => {
+                if (item.dataset.yAxisID === "yWeight") return `${item.parsed.y} kg`;
+                return `${item.parsed.y} Wdh.`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              color: colors.dim,
+              font: { size: 10, family: "'DM Sans', sans-serif" },
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 5
+            }
+          },
+          yWeight: {
+            type: "linear",
+            position: "left",
+            grace: "12%",
+            grid: {
+              color: colors.grid,
+              drawBorder: false,
+              lineWidth: 1
+            },
+            border: { display: false },
+            ticks: {
+              color: colors.dim,
+              font: { size: 10, family: "'DM Mono', monospace" },
+              maxTicksLimit: 4,
+              padding: 6,
+              callback: (value) => `${value}`
+            }
+          },
+          yReps: {
+            type: "linear",
+            position: "right",
+            grace: "15%",
+            grid: { drawOnChartArea: false, drawBorder: false },
+            border: { display: false },
+            ticks: {
+              color: colors.dim,
+              font: { size: 10, family: "'DM Mono', monospace" },
+              maxTicksLimit: 3,
+              padding: 6
+            }
+          }
+        }
+      }
+    });
+  }
+
   async function renderUserHistory(user) {
     hideWorkoutProgress();
     const wrap = document.getElementById("trainingContent");
     wrap.innerHTML = `<div class="section-title">Historie: ${user}</div><div class="skeleton-card"><div class="skeleton-line" style="width:60%"></div><div class="skeleton-line" style="width:90%"></div><div class="skeleton-line" style="width:40%"></div></div>`;
     const history = await getFullUserHistory(user);
     const exIds = Object.keys(history);
-    let html = `<div class="section-title">Historie: ${user}</div>`;
+    let html = `<div class="section-title">Entwicklung</div>
+      <div class="sub" style="margin-top:-4px;margin-bottom:14px">Gewicht &amp; Wiederholungen der letzten Einheiten — schlank und klar.</div>`;
     html += `<div class="export-btn-wrap"><button id="exportCsvBtn" class="btn-main btn-dark" style="width:auto;padding:10px 18px;display:inline-block">⬇️ Trainingsdaten exportieren (CSV)</button></div>`;
     if (exIds.length === 0) {
       html += `<div class="info-box">Noch keine Übungen protokolliert.</div>`;
@@ -1267,9 +1686,24 @@ export function createTrainingModule(ctx = {}) {
           }
         });
 
-        html += `<div class="upcoming-wrap"><div class="upcoming-title">${exName}</div>`;
-        html += `<div class="hist-chart-wrap"><canvas id="${chartId}"></canvas></div>`;
-        entries.slice(0,10).forEach(e => {
+        const latest = chronological[chronological.length - 1];
+        const trend = formatHistoryTrend(chronological);
+        const latestLabel = latest
+          ? `${latest.weight} kg <span>× ${latest.reps} Wdh.</span>`
+          : "—";
+
+        html += `<div class="upcoming-wrap">
+          <div class="upcoming-title">${exName}</div>
+          <div class="hist-summary">
+            <div class="hist-summary-main">${latestLabel}</div>
+            <div class="hist-summary-trend ${trend.cls}">${trend.text}</div>
+          </div>
+          <div class="hist-legend">
+            <span class="hist-legend-item"><span class="hist-legend-swatch weight"></span>Gewicht</span>
+            <span class="hist-legend-item"><span class="hist-legend-swatch reps"></span>Wiederholungen</span>
+          </div>
+          <div class="hist-chart-wrap"><canvas id="${chartId}"></canvas></div>`;
+        chronological.slice().reverse().slice(0, 8).forEach(e => {
           const d = new Date(e.date).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"2-digit"});
           const isPR = prDates.has(e.date);
           const prBadge = isPR ? `<span class="pr-badge" title="Neues persönliches Bestgewicht">🏆 PR</span>` : "";
@@ -1332,39 +1766,17 @@ export function createTrainingModule(ctx = {}) {
     });
 
     if (exIds.length > 0) {
-      exIds.forEach(exId => {
-        const entries = [...history[exId]].sort((a,b) => a.date - b.date).slice(-15);
-        const labels = entries.map(e => new Date(e.date).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"}));
-        const repsData = entries.map(e => e.reps);
-        const weightData = entries.map(e => e.weight);
+      exIds.forEach((exId) => {
+        const chronological = [...history[exId]].sort((a, b) => a.date - b.date);
         const ctx = document.getElementById(`histChart_${exId}`);
-        if (!ctx) return;
-        new Chart(ctx, {
-          type: "line",
-          data: {
-            labels,
-            datasets: [
-              { label: "Wiederholungen", data: repsData, borderColor: "#4da6ff", backgroundColor: "#4da6ff", yAxisID: "yReps", tension: 0.25, pointRadius: 3 },
-              { label: "Gewicht (kg)", data: weightData, borderColor: "#ff4d4d", backgroundColor: "#ff4d4d", yAxisID: "yWeight", tension: 0.25, pointRadius: 3 }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: { legend: { labels: { color: "#ddd", font: { size: 10 } } } },
-            scales: {
-              x: { ticks: { color: "#999", font: { size: 9 } }, grid: { color: "#1e1e1e" } },
-              yReps: { type: "linear", position: "left", ticks: { color: "#4da6ff", font: { size: 9 } }, grid: { color: "#1e1e1e" }, title: { display: true, text: "Wdh.", color: "#4da6ff", font: { size: 10 } } },
-              yWeight: { type: "linear", position: "right", ticks: { color: "#ff4d4d", font: { size: 9 } }, grid: { drawOnChartArea: false }, title: { display: true, text: "kg", color: "#ff4d4d", font: { size: 10 } } }
-            }
-          }
-        });
+        renderHistoryProgressChart(ctx, chronological);
       });
     }
   }
 
   async function renderWarmup() {
+    sessionPhase = "warmup";
+    saveActiveSession();
     hideWorkoutProgress();
     const wrap = document.getElementById("trainingContent");
     const goalLabel = GOAL_LABELS[selectedGoal] || selectedGoal || "Eigenes Workout";
@@ -1405,10 +1817,13 @@ export function createTrainingModule(ctx = {}) {
   let restTimerInterval = null;
 
   function renderRestTimer() {
+    sessionPhase = "rest";
+    saveActiveSession();
+    stopSetRestTimer();
     clearInterval(restTimerInterval);
     setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
     const wrap = document.getElementById("trainingContent");
-    const savedDuration = parseInt(localStorage.getItem("kg_rest_duration")) || 90;
+    const savedDuration = getSavedRestDuration();
     let remaining = savedDuration;
     const next = currentWorkoutQueue[currentExerciseIdx];
     const nextName = next?.name || "Nächste Übung";
@@ -1479,6 +1894,7 @@ export function createTrainingModule(ctx = {}) {
   }
 
   async function renderTrainingExercise() {
+    stopSetRestTimer();
     const wrap = document.getElementById("trainingContent");
     if (!writeKey()) {
       wrap.innerHTML = requireLoginHtml();
@@ -1489,27 +1905,31 @@ export function createTrainingModule(ctx = {}) {
     }
     if (currentExerciseIdx >= currentWorkoutQueue.length) {
       hideWorkoutProgress();
-      clearActiveSession();
+      const finishedCount = currentWorkoutQueue.length;
       const bodyList = [...completedBodies];
-      const bodyNamesHTML = bodyList.length
-        ? `<ul style="margin:10px 0 0;padding-left:18px;color:#ddd;line-height:1.6">${bodyList.map(b=>`<li>${BODY_LABELS[b]||b}</li>`).join("")}</ul>`
-        : `<div class="sub" style="margin-top:8px">Keine Muskelgruppe erfasst.</div>`;
+      const volumeKg = sessionVolumeKg;
+      const setCount = sessionSetCount;
+      currentWorkoutQueue = [];
+      currentExerciseIdx = 0;
+      clearActiveSession();
       if (!growthMvpInitialized && trainingUser) {
         updateGrowthMvpInitialized(true);
-        await recordWorkoutCompletion(trainingUser, currentWorkoutQueue.length);
+        await recordWorkoutCompletion(trainingUser, finishedCount);
       }
-      wrap.innerHTML = `<div class="section-title">Fertig! 🎉</div><div class="info-box">Workout abgeschlossen, ${currentWorkoutQueue.length} Übungen protokolliert.</div>
-        <div class="upcoming-wrap" style="text-align:center">
-          <div class="upcoming-title">Trainierte Muskelgruppen</div>
-          ${renderMuscleSVG(bodyList)}
-          ${bodyNamesHTML}
-        </div>
-        <button id="restartTrainingBtn" class="btn-main btn-dark" style="margin-top:16px">Neues AI Workout generieren</button>`;
-      document.getElementById("restartTrainingBtn").addEventListener("click", renderTrainingSetup);
+      wrap.innerHTML = renderWorkoutCompleteSummary({
+        finishedCount,
+        bodyList,
+        volumeKg,
+        setCount
+      });
+      document.getElementById("restartTrainingBtn")?.addEventListener("click", renderTrainingSetup);
+      document.getElementById("backFromCompleteBtn")?.addEventListener("click", renderTrainingSetup);
       return;
     }
     updateGrowthMvpInitialized(false);
+    sessionPhase = "exercise";
     setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
+    saveActiveSession();
     const ex = currentWorkoutQueue[currentExerciseIdx];
 
     if (isCardioStep(ex)) {
@@ -1526,6 +1946,8 @@ export function createTrainingModule(ctx = {}) {
         showToast(`${ex.name} erledigt.`, "success", 2000);
         if (key) await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
         currentExerciseIdx++;
+        currentSets = [];
+        pendingRestoredSets = null;
         saveActiveSession();
         if (currentExerciseIdx >= currentWorkoutQueue.length) {
           if (key) await saveLastWorkout(key, strengthIdsFromQueue());
@@ -1536,6 +1958,8 @@ export function createTrainingModule(ctx = {}) {
       });
       document.getElementById("skipExBtn").addEventListener("click", () => {
         currentExerciseIdx++;
+        currentSets = [];
+        pendingRestoredSets = null;
         saveActiveSession();
         renderTrainingExercise();
       });
@@ -1588,6 +2012,7 @@ export function createTrainingModule(ctx = {}) {
         ${instrHTML}
         <button id="doneExBtn" class="btn-main btn-lime" style="margin-top:16px">Erledigt →</button>
         <button id="skipExBtn" class="btn-main btn-dark" style="margin-top:8px">Übung überspringen</button>
+        <button id="abandonTrainingBtn" class="owner-link" style="margin-top:14px;display:block;width:100%;text-align:center">Training abbrechen</button>
       </div>`;
 
     if (instrHTML) {
@@ -1602,7 +2027,12 @@ export function createTrainingModule(ctx = {}) {
 
     initExerciseMediaFallbacks(wrap);
 
-    currentSets = [];
+    if (Array.isArray(pendingRestoredSets)) {
+      currentSets = pendingRestoredSets;
+      pendingRestoredSets = null;
+    } else if (!Array.isArray(currentSets)) {
+      currentSets = [];
+    }
 
     function renderSetsList() {
       const listEl = document.getElementById("setsList");
@@ -1620,6 +2050,7 @@ export function createTrainingModule(ctx = {}) {
         btn.addEventListener("click", () => {
           currentSets.splice(parseInt(btn.dataset.idx), 1);
           renderSetsList();
+          saveActiveSession();
         });
       });
     }
@@ -1637,6 +2068,15 @@ export function createTrainingModule(ctx = {}) {
       currentSets.push({ weight, reps, rir });
       renderSetsList();
       showToast(`Satz ${currentSets.length} hinzugefügt.`, "success", 1200);
+      saveActiveSession();
+      startSetRestTimer({ setNumber: currentSets.length });
+    });
+
+    document.getElementById("abandonTrainingBtn")?.addEventListener("click", () => {
+      if (!confirm("Training abbrechen? Fortschritt der offenen Übung geht lokal verloren (bereits gespeicherte Übungen bleiben).")) return;
+      abandonActiveTraining();
+      showToast("Training abgebrochen.", "info", 2000);
+      renderTrainingSetup();
     });
 
     // Buttons sofort aktivieren, nicht erst nach der Firebase-Abfrage des letzten Logs
@@ -1711,8 +2151,12 @@ export function createTrainingModule(ctx = {}) {
         }
       }
       completedBodies.add(ex.body);
+      sessionVolumeKg += setsVolumeKg(currentSets);
+      sessionSetCount += currentSets.length;
       await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
       currentExerciseIdx++;
+      currentSets = [];
+      pendingRestoredSets = null;
       saveActiveSession();
       if (currentExerciseIdx >= currentWorkoutQueue.length) {
         await saveLastWorkout(key, strengthIdsFromQueue());
@@ -1724,6 +2168,8 @@ export function createTrainingModule(ctx = {}) {
     });
     document.getElementById("skipExBtn").addEventListener("click", () => {
       currentExerciseIdx++;
+      currentSets = [];
+      pendingRestoredSets = null;
       saveActiveSession();
       renderTrainingExercise();
     });
@@ -1802,6 +2248,12 @@ export function createTrainingModule(ctx = {}) {
     renderTrainingExercise,
     setWorkoutProgress,
     hideWorkoutProgress,
+    startSetRestTimer,
+    stopSetRestTimer,
+    saveActiveSession,
+    hasActiveSession,
+    resumeActiveTraining,
+    abandonActiveTraining,
     setSelectedDuration,
     getSelectedDuration
   };

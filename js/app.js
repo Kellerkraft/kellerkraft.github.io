@@ -160,7 +160,7 @@ const trainingModule = createTrainingModule({
 });
 
 const { loadCustomExercises, renderUebungenPage } = exercisesModule;
-const { renderTrainingSetup, renderDbOverview, hideWorkoutProgress, setSelectedDuration } = trainingModule;
+const { renderTrainingSetup, renderDbOverview, hideWorkoutProgress, setSelectedDuration, hasActiveSession, resumeActiveTraining, saveActiveSession } = trainingModule;
 
 const reservations = createReservationsModule({
   getSchedule: () => currentSchedule,
@@ -321,16 +321,30 @@ function attachHomeListeners() {
 
 function switchTab(tab) {
   activeTab = tab;
-  if (tab !== "training") hideWorkoutProgress();
+  if (tab !== "training") {
+    if (typeof saveActiveSession === "function") saveActiveSession();
+    hideWorkoutProgress();
+  }
   document.querySelectorAll(".tab-page").forEach((p) => p.classList.remove("active"));
   document.getElementById("page-" + tab).classList.add("active");
   document.querySelectorAll(".bottom-tab").forEach((i) => i.classList.toggle("active", i.dataset.tab === tab));
   document.getElementById("navLabel").textContent = NAV_LABELS[tab];
-  window.scrollTo(0, 0);
+  const scrollRoot = document.querySelector(".wrap");
+  if (scrollRoot) scrollRoot.scrollTop = 0;
+  else window.scrollTo(0, 0);
   trackEvent("tab_switch", { tab });
   if (tab === "reserve") renderReservePage();
   if (tab === "home") renderAll();
-  if (tab === "training") renderTrainingSetup();
+  if (tab === "training") {
+    if (typeof hasActiveSession === "function" && hasActiveSession() && typeof resumeActiveTraining === "function") {
+      const resumed = resumeActiveTraining();
+      if (resumed) {
+        showToast("Training fortgesetzt.", "success", 1800);
+        return;
+      }
+    }
+    renderTrainingSetup();
+  }
   if (tab === "uebungen") renderUebungenPage();
 }
 
@@ -458,6 +472,11 @@ async function boot() {
     onOnline: () => flushTrainingOfflineQueue(),
     onOffline: () => updateOfflineBanner()
   });
+
+  // Return to an open workout after Safari/app reload when possible.
+  if (typeof hasActiveSession === "function" && hasActiveSession()) {
+    switchTab("training");
+  }
 }
 
 boot();
