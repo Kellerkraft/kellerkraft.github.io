@@ -1935,7 +1935,7 @@ export function createTrainingModule(ctx = {}) {
     if (isCardioStep(ex)) {
       wrap.innerHTML = `<div class="upcoming-wrap">
         <div class="upcoming-title">Cardio-Finisher</div>
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${ex.name}</div>
+        <div class="exercise-session-name">${ex.name}</div>
         <div class="info-box" style="margin-bottom:14px">${ex.note || `${ex.minutes} Min. ${ex.name}`}</div>
         <div class="sub" style="margin-bottom:16px">Kein Gewichtslog — einfach die Zeit absolvieren und fertig tippen.</div>
         <button id="doneExBtn" class="btn-main btn-lime" style="margin-top:8px">Cardio erledigt →</button>
@@ -1990,7 +1990,7 @@ export function createTrainingModule(ctx = {}) {
           <input type="number" step="1" id="logRackSetting" class="time-input" placeholder="z.B. 5">
         </div>` : "";
     wrap.innerHTML = `<div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
-        <div style="font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:#fff;margin-bottom:10px">${display.name}</div>
+        <div class="exercise-session-name">${display.name}</div>
         ${mediaHTML}
         <div class="sub" id="recoNote" style="color:#999;margin-bottom:14px">Lade letzten Wert…</div>
         <div class="field-label" style="margin-bottom:6px">Sätze</div>
