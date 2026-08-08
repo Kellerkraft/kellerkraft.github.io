@@ -192,7 +192,7 @@ html[data-theme="light"] {
   width: 14px;
 }
 .upcoming-rack { font-size: 11px; color: #8ab4ff; margin-top: 2px; letter-spacing: .3px; }
-.muscle-view-grid { display: flex; gap: 12px; justify-content: center; margin: 12px auto 4px; max-width: 360px; }
+.muscle-view-grid { display: flex; gap: 12px; justify-content: center; margin: 12px auto 4px; max-width: 400px; }
 .muscle-view-card { flex: 1; text-align: center; min-width: 0; }
 .muscle-view-label {
   font-size: 10px;
@@ -203,15 +203,53 @@ html[data-theme="light"] {
   font-weight: 600;
 }
 .muscle-svg-frame {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--bg-elevated)) 0%, var(--bg-elevated) 100%);
+  background:
+    radial-gradient(ellipse 60% 28% at 50% 10%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%),
+    linear-gradient(180deg, var(--bg-elevated) 0%, color-mix(in srgb, var(--bg) 50%, var(--bg-elevated)) 100%);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 10px 6px 6px;
+  border-radius: var(--radius-lg);
+  padding: 12px 6px 8px;
+  overflow: hidden;
 }
-.muscle-svg { width: 100%; max-width: 140px; height: auto; display: block; margin: 0 auto; }
-.muscle-static { fill: var(--bg-input); stroke: var(--border-soft); stroke-width: 1.2; }
-.muscle { fill: var(--bg-input); stroke: var(--border-soft); stroke-width: 1.2; transition: fill 0.35s ease, stroke 0.35s ease, filter 0.35s ease; }
-.muscle.active { fill: var(--accent); stroke: var(--accent-soft); filter: drop-shadow(0 0 5px var(--accent-glow)); }
+.muscle-svg {
+  width: 100%;
+  max-width: 168px;
+  height: auto;
+  aspect-ratio: 724 / 1448;
+  display: block;
+  margin: 0 auto;
+}
+.muscle-outline {
+  fill: none;
+  stroke: color-mix(in srgb, var(--border-soft) 80%, var(--text-dim));
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.muscle-static {
+  fill: color-mix(in srgb, var(--bg-input) 88%, var(--border));
+  stroke: color-mix(in srgb, var(--bg) 40%, var(--border));
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+}
+.muscle {
+  fill: color-mix(in srgb, var(--bg-input) 72%, var(--border-soft));
+  stroke: color-mix(in srgb, var(--bg) 45%, var(--border-soft));
+  stroke-width: 0.7;
+  stroke-linejoin: round;
+  transition: fill 0.25s ease, stroke 0.25s ease;
+}
+.muscle.active {
+  fill: var(--accent);
+  stroke: color-mix(in srgb, var(--accent) 55%, #fff);
+  stroke-width: 0.85;
+}
+.muscle-line {
+  display: none;
+}
 .muscle-legend {
   display: flex;
   align-items: center;

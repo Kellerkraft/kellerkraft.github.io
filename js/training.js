@@ -14,6 +14,16 @@ import {
   syncPendingWrites,
   pendingCount
 } from "./offline.js";
+import {
+  BODYMAP_FRONT_VIEWBOX,
+  BODYMAP_BACK_VIEWBOX,
+  BODYMAP_FRONT_MUSCLES,
+  BODYMAP_FRONT_STATIC,
+  BODYMAP_FRONT_OUTLINE,
+  BODYMAP_BACK_MUSCLES,
+  BODYMAP_BACK_STATIC,
+  BODYMAP_BACK_OUTLINE
+} from "./bodymap-assets.js";
 
 export function createTrainingModule(ctx = {}) {
   const BODY_LABELS = ctx.BODY_LABELS || ctx.bodyLabels || DATA_BODY_LABELS;
@@ -189,59 +199,44 @@ export function createTrainingModule(ctx = {}) {
   function renderMuscleSVG(activeBodies) {
     const frontIds = new Set();
     const backIds = new Set();
-    activeBodies.forEach(b => {
-      (BODY_TO_FRONT_IDS[b] || []).forEach(id => frontIds.add(id));
-      (BODY_TO_BACK_IDS[b] || []).forEach(id => backIds.add(id));
+    activeBodies.forEach((b) => {
+      (BODY_TO_FRONT_IDS[b] || []).forEach((id) => frontIds.add(id));
+      (BODY_TO_BACK_IDS[b] || []).forEach((id) => backIds.add(id));
     });
-    const fA = id => frontIds.has(id) ? " active" : "";
-    const bA = id => backIds.has(id) ? " active" : "";
+    const cls = (set, id) => (set.has(id) ? "muscle active" : "muscle");
+    const frontStatic = BODYMAP_FRONT_STATIC.map((p) =>
+      `<path class="muscle-static" d="${p.d}"/>`
+    ).join("");
+    const frontMuscles = BODYMAP_FRONT_MUSCLES.map((p) =>
+      `<path class="${cls(frontIds, p.id)}" data-region="${p.id}" d="${p.d}"/>`
+    ).join("");
+    const backStatic = BODYMAP_BACK_STATIC.map((p) =>
+      `<path class="muscle-static" d="${p.d}"/>`
+    ).join("");
+    const backMuscles = BODYMAP_BACK_MUSCLES.map((p) =>
+      `<path class="${cls(backIds, p.id)}" data-region="${p.id}" d="${p.d}"/>`
+    ).join("");
 
     return `
       <div class="muscle-view-grid">
         <div class="muscle-view-card">
           <div class="muscle-view-label">Vorne</div>
           <div class="muscle-svg-frame">
-          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <ellipse class="muscle-static" cx="100" cy="32" rx="16" ry="19"/>
-            <path class="muscle-static" d="M92,48 L108,48 L109,60 L91,60 Z"/>
-            <path class="muscle${fA('f-shoulder-l')}" id="f-shoulder-l" d="M60,62 Q45,60 40,72 Q38,82 46,88 L60,80 Z"/>
-            <path class="muscle${fA('f-shoulder-r')}" id="f-shoulder-r" d="M140,62 Q155,60 160,72 Q162,82 154,88 L140,80 Z"/>
-            <path class="muscle${fA('f-chest')}" id="f-chest" d="M65,64 Q100,58 135,64 L133,104 Q100,112 67,104 Z"/>
-            <path class="muscle${fA('f-abs')}" id="f-abs" d="M70,106 L130,106 L126,160 Q100,166 74,160 Z"/>
-            <path class="muscle${fA('f-bicep-l')}" id="f-bicep-l" d="M44,90 L58,82 L60,120 L48,126 Z"/>
-            <path class="muscle${fA('f-bicep-r')}" id="f-bicep-r" d="M156,90 L142,82 L140,120 L152,126 Z"/>
-            <path class="muscle-static" d="M46,128 L60,122 L58,168 L48,172 Z"/>
-            <path class="muscle-static" d="M154,128 L140,122 L142,168 L152,172 Z"/>
-            <path class="muscle-static" d="M72,162 L128,162 L122,182 Q100,188 78,182 Z"/>
-            <path class="muscle${fA('f-quad-l')}" id="f-quad-l" d="M78,184 L98,182 L95,270 L80,270 Z"/>
-            <path class="muscle${fA('f-quad-r')}" id="f-quad-r" d="M122,184 L102,182 L105,270 L120,270 Z"/>
-            <path class="muscle${fA('f-calf-l')}" id="f-calf-l" d="M80,272 L94,272 L91,340 L82,340 Z"/>
-            <path class="muscle${fA('f-calf-r')}" id="f-calf-r" d="M120,272 L106,272 L109,340 L118,340 Z"/>
-          </svg>
+            <svg class="muscle-svg" viewBox="${BODYMAP_FRONT_VIEWBOX}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path class="muscle-outline" d="${BODYMAP_FRONT_OUTLINE}"/>
+              ${frontStatic}
+              ${frontMuscles}
+            </svg>
           </div>
         </div>
         <div class="muscle-view-card">
           <div class="muscle-view-label">Hinten</div>
           <div class="muscle-svg-frame">
-          <svg class="muscle-svg" viewBox="0 0 200 400" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <ellipse class="muscle-static" cx="100" cy="32" rx="16" ry="19"/>
-            <path class="muscle${bA('b-trap')}" id="b-trap" d="M78,50 L122,50 L128,72 L100,80 L72,72 Z"/>
-            <path class="muscle${bA('b-shoulder-l')}" id="b-shoulder-l" d="M60,64 Q45,62 40,74 Q38,84 46,90 L60,82 Z"/>
-            <path class="muscle${bA('b-shoulder-r')}" id="b-shoulder-r" d="M140,64 Q155,62 160,74 Q162,84 154,90 L140,82 Z"/>
-            <path class="muscle${bA('b-lat-l')}" id="b-lat-l" d="M62,82 L98,80 L94,140 Q76,146 64,138 Z"/>
-            <path class="muscle${bA('b-lat-r')}" id="b-lat-r" d="M138,82 L102,80 L106,140 Q124,146 136,138 Z"/>
-            <path class="muscle${bA('b-lower')}" id="b-lower" d="M76,142 L124,142 L120,168 Q100,174 80,168 Z"/>
-            <path class="muscle${bA('b-tricep-l')}" id="b-tricep-l" d="M44,92 L58,84 L60,122 L48,128 Z"/>
-            <path class="muscle${bA('b-tricep-r')}" id="b-tricep-r" d="M156,92 L142,84 L140,122 L152,128 Z"/>
-            <path class="muscle-static" d="M46,130 L60,124 L58,170 L48,174 Z"/>
-            <path class="muscle-static" d="M154,130 L140,124 L142,170 L152,174 Z"/>
-            <path class="muscle${bA('b-glute-l')}" id="b-glute-l" d="M74,170 L100,168 L98,196 L76,198 Z"/>
-            <path class="muscle${bA('b-glute-r')}" id="b-glute-r" d="M126,170 L100,168 L102,196 L124,198 Z"/>
-            <path class="muscle${bA('b-ham-l')}" id="b-ham-l" d="M78,198 L98,196 L95,270 L80,270 Z"/>
-            <path class="muscle${bA('b-ham-r')}" id="b-ham-r" d="M122,198 L102,196 L105,270 L120,270 Z"/>
-            <path class="muscle${bA('b-calf-l')}" id="b-calf-l" d="M80,272 L94,272 L91,340 L82,340 Z"/>
-            <path class="muscle${bA('b-calf-r')}" id="b-calf-r" d="M120,272 L106,272 L109,340 L118,340 Z"/>
-          </svg>
+            <svg class="muscle-svg" viewBox="${BODYMAP_BACK_VIEWBOX}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path class="muscle-outline" d="${BODYMAP_BACK_OUTLINE}"/>
+              ${backStatic}
+              ${backMuscles}
+            </svg>
           </div>
         </div>
       </div>
@@ -250,6 +245,7 @@ export function createTrainingModule(ctx = {}) {
         <span class="muscle-legend-item"><span class="legend-dot"></span> Nicht trainiert</span>
       </div>`;
   }
+
   function setWorkoutProgress(current, total) {
     const bar = document.getElementById("workoutProgressBar");
     if (!bar) return;
