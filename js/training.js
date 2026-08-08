@@ -247,7 +247,7 @@ export function createTrainingModule(ctx = {}) {
       </div>
       <div class="muscle-legend">
         <span class="muscle-legend-item"><span class="legend-dot active"></span> Trainiert</span>
-        <span class="muscle-legend-item"><span class="legend-dot"></span> Pause</span>
+        <span class="muscle-legend-item"><span class="legend-dot"></span> Nicht trainiert</span>
       </div>`;
   }
   function setWorkoutProgress(current, total) {
