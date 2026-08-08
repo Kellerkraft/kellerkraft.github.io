@@ -320,8 +320,13 @@ export function createTrainingModule(ctx = {}) {
   let sessionOverrides = {};
   /** Once true, never block the exercise UI on a network overrides fetch. */
   let sessionOverridesReady = false;
+  /** warmup | exercise | rest — where the athlete left off */
+  let sessionPhase = "exercise";
+  let pendingRestoredSets = null;
+  let sessionAutosaveBound = false;
   const ACTIVE_SESSION_KEY = "kg_active_training_session_v1";
   const OVERRIDES_CACHE_KEY = "kg_exercise_overrides_cache_v1";
+  const SESSION_MAX_AGE_MS = 18 * 60 * 60 * 1000;
 
   function readOverridesCacheSync() {
     try {
@@ -349,7 +354,13 @@ export function createTrainingModule(ctx = {}) {
     return sessionOverrides;
   }
 
+  function isSessionFresh(savedAt) {
+    if (!Number.isFinite(savedAt) || savedAt <= 0) return true;
+    return (Date.now() - savedAt) <= SESSION_MAX_AGE_MS;
+  }
+
   function saveActiveSession() {
+    if (!Array.isArray(currentWorkoutQueue) || currentWorkoutQueue.length === 0) return;
     try {
       const payload = {
         selectedDuration,
@@ -359,6 +370,8 @@ export function createTrainingModule(ctx = {}) {
         queue: currentWorkoutQueue,
         index: currentExerciseIdx,
         completedBodies: [...completedBodies],
+        currentSets: Array.isArray(currentSets) ? currentSets : [],
+        phase: sessionPhase || "exercise",
         sessionOverrides: sessionOverrides || {},
         sessionOverridesReady: true,
         savedAt: Date.now()
@@ -376,32 +389,61 @@ export function createTrainingModule(ctx = {}) {
       // ignore
     }
     sessionOverridesReady = false;
+    sessionPhase = "exercise";
+    pendingRestoredSets = null;
+    currentSets = [];
+  }
+
+  function readStoredSession() {
+    try {
+      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      if (!s || !Array.isArray(s.queue) || !s.queue.length) return null;
+      if (!isSessionFresh(s.savedAt)) {
+        clearActiveSession();
+        return null;
+      }
+      return s;
+    } catch {
+      return null;
+    }
   }
 
   function hasActiveSession() {
-    try {
-      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
-      if (!raw) return false;
-      const s = JSON.parse(raw);
-      return !!(s && Array.isArray(s.queue) && s.queue.length);
-    } catch {
-      return false;
+    if (
+      Array.isArray(currentWorkoutQueue) &&
+      currentWorkoutQueue.length > 0 &&
+      currentExerciseIdx < currentWorkoutQueue.length
+    ) {
+      return true;
     }
+    return !!readStoredSession();
   }
 
   function restoreActiveSession() {
     try {
-      const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
-      if (!raw) return false;
-      const s = JSON.parse(raw);
-      if (!s || !Array.isArray(s.queue) || !s.queue.length) return false;
+      if (Array.isArray(currentWorkoutQueue) && currentWorkoutQueue.length > 0) {
+        return true;
+      }
+      const s = readStoredSession();
+      if (!s) return false;
       currentWorkoutQueue = s.queue;
       currentExerciseIdx = Math.max(0, Number(s.index || 0));
+      if (currentExerciseIdx >= currentWorkoutQueue.length) {
+        currentExerciseIdx = Math.max(0, currentWorkoutQueue.length - 1);
+      }
       completedBodies = new Set(Array.isArray(s.completedBodies) ? s.completedBodies : []);
       if (Number.isFinite(s.selectedDuration)) selectedDuration = s.selectedDuration;
       if (s.selectedGoal) selectedGoal = s.selectedGoal;
       cardioEnabled = s.cardioEnabled === true ? true : (s.cardioEnabled === false ? false : null);
       selectedCardio = new Set(Array.isArray(s.selectedCardio) ? s.selectedCardio : []);
+      const restoredSets = Array.isArray(s.currentSets) ? s.currentSets.filter(Boolean) : [];
+      currentSets = restoredSets;
+      pendingRestoredSets = restoredSets;
+      sessionPhase = (s.phase === "warmup" || s.phase === "rest" || s.phase === "exercise")
+        ? s.phase
+        : "exercise";
       if (s.sessionOverrides && typeof s.sessionOverrides === "object") {
         sessionOverrides = s.sessionOverrides;
         sessionOverridesReady = true;
@@ -414,6 +456,44 @@ export function createTrainingModule(ctx = {}) {
       return false;
     }
   }
+
+  function resumeActiveTraining() {
+    if (!restoreActiveSession()) return false;
+    if (sessionPhase === "warmup") {
+      renderWarmup();
+      return true;
+    }
+    if (sessionPhase === "rest") {
+      renderRestTimer();
+      return true;
+    }
+    renderTrainingExercise();
+    return true;
+  }
+
+  function abandonActiveTraining() {
+    clearInterval(restTimerInterval);
+    stopSetRestTimer();
+    hideWorkoutProgress();
+    currentWorkoutQueue = [];
+    currentExerciseIdx = 0;
+    completedBodies = new Set();
+    clearActiveSession();
+  }
+
+  function bindSessionAutosave() {
+    if (sessionAutosaveBound) return;
+    sessionAutosaveBound = true;
+    const persist = () => {
+      if (currentWorkoutQueue.length > 0) saveActiveSession();
+    };
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") persist();
+    });
+    window.addEventListener("pagehide", persist);
+    window.addEventListener("beforeunload", persist);
+  }
+  bindSessionAutosave();
 
   const WARMUP_EXAMPLES = [
     "Hyperextensions am Ab & Back Trainer – 1 x 12 (locker, ohne Zusatzgewicht)",
@@ -964,6 +1044,9 @@ export function createTrainingModule(ctx = {}) {
         await prepareSessionOverrides();
         currentExerciseIdx = 0;
         completedBodies = new Set();
+        currentSets = [];
+        pendingRestoredSets = null;
+        sessionPhase = "warmup";
         saveActiveSession();
         renderWarmup();
       });
@@ -1114,9 +1197,11 @@ export function createTrainingModule(ctx = {}) {
         Erstellt ein <strong>AI-optimiertes Workout</strong> je nach Trainingsbereich, Dauer und Erfahrungslevel.
       </div>
       ${hasActiveSession()
-        ? `<div class="info-box" style="margin-bottom:14px">
-            Ein Training ist lokal zwischengespeichert.
-            <button id="resumeTrainingBtn" class="btn-main btn-dark" style="margin-top:8px">Training fortsetzen</button>
+        ? `<div class="info-box resume-session-card" style="margin-bottom:14px">
+            <strong>Offenes Training gefunden</strong>
+            <div class="sub" style="margin-top:6px">Du kannst genau dort weitermachen, wo du aufgehört hast — auch nach App-Wechsel.</div>
+            <button id="resumeTrainingBtn" class="btn-main btn-lime" style="margin-top:10px">Training fortsetzen →</button>
+            <button id="discardTrainingBtn" class="btn-main btn-dark" style="margin-top:8px">Verwerfen &amp; neu starten</button>
           </div>`
         : ""}
 
@@ -1245,16 +1330,24 @@ export function createTrainingModule(ctx = {}) {
       currentWorkoutQueue = buildWorkout();
       currentExerciseIdx = 0;
       completedBodies = new Set();
+      currentSets = [];
+      pendingRestoredSets = null;
+      sessionPhase = "warmup";
       saveActiveSession();
       renderWarmup();
     });
     document.getElementById("resumeTrainingBtn")?.addEventListener("click", async () => {
-      if (!restoreActiveSession()) {
+      if (!resumeActiveTraining()) {
         showToast("Kein gespeichertes Training gefunden.", "error", 2500);
         return;
       }
-      if (!sessionOverridesReady) await prepareSessionOverrides();
-      renderTrainingExercise();
+      showToast("Training fortgesetzt.", "success", 1800);
+    });
+    document.getElementById("discardTrainingBtn")?.addEventListener("click", () => {
+      if (!confirm("Offenes Training wirklich verwerfen?")) return;
+      abandonActiveTraining();
+      showToast("Altes Training verworfen.", "info", 1800);
+      renderTrainingSetup();
     });
     document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
       const key = readKey();
@@ -1470,6 +1563,8 @@ export function createTrainingModule(ctx = {}) {
   }
 
   async function renderWarmup() {
+    sessionPhase = "warmup";
+    saveActiveSession();
     hideWorkoutProgress();
     const wrap = document.getElementById("trainingContent");
     const goalLabel = GOAL_LABELS[selectedGoal] || selectedGoal || "Eigenes Workout";
@@ -1510,6 +1605,8 @@ export function createTrainingModule(ctx = {}) {
   let restTimerInterval = null;
 
   function renderRestTimer() {
+    sessionPhase = "rest";
+    saveActiveSession();
     stopSetRestTimer();
     clearInterval(restTimerInterval);
     setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
@@ -1596,16 +1693,19 @@ export function createTrainingModule(ctx = {}) {
     }
     if (currentExerciseIdx >= currentWorkoutQueue.length) {
       hideWorkoutProgress();
-      clearActiveSession();
+      const finishedCount = currentWorkoutQueue.length;
       const bodyList = [...completedBodies];
+      currentWorkoutQueue = [];
+      currentExerciseIdx = 0;
+      clearActiveSession();
       const bodyNamesHTML = bodyList.length
         ? `<ul style="margin:10px 0 0;padding-left:18px;color:#ddd;line-height:1.6">${bodyList.map(b=>`<li>${BODY_LABELS[b]||b}</li>`).join("")}</ul>`
         : `<div class="sub" style="margin-top:8px">Keine Muskelgruppe erfasst.</div>`;
       if (!growthMvpInitialized && trainingUser) {
         updateGrowthMvpInitialized(true);
-        await recordWorkoutCompletion(trainingUser, currentWorkoutQueue.length);
+        await recordWorkoutCompletion(trainingUser, finishedCount);
       }
-      wrap.innerHTML = `<div class="section-title">Fertig! 🎉</div><div class="info-box">Workout abgeschlossen, ${currentWorkoutQueue.length} Übungen protokolliert.</div>
+      wrap.innerHTML = `<div class="section-title">Fertig! 🎉</div><div class="info-box">Workout abgeschlossen, ${finishedCount} Übungen protokolliert.</div>
         <div class="upcoming-wrap" style="text-align:center">
           <div class="upcoming-title">Trainierte Muskelgruppen</div>
           ${renderMuscleSVG(bodyList)}
@@ -1616,7 +1716,9 @@ export function createTrainingModule(ctx = {}) {
       return;
     }
     updateGrowthMvpInitialized(false);
+    sessionPhase = "exercise";
     setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
+    saveActiveSession();
     const ex = currentWorkoutQueue[currentExerciseIdx];
 
     if (isCardioStep(ex)) {
@@ -1633,6 +1735,8 @@ export function createTrainingModule(ctx = {}) {
         showToast(`${ex.name} erledigt.`, "success", 2000);
         if (key) await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
         currentExerciseIdx++;
+        currentSets = [];
+        pendingRestoredSets = null;
         saveActiveSession();
         if (currentExerciseIdx >= currentWorkoutQueue.length) {
           if (key) await saveLastWorkout(key, strengthIdsFromQueue());
@@ -1643,6 +1747,8 @@ export function createTrainingModule(ctx = {}) {
       });
       document.getElementById("skipExBtn").addEventListener("click", () => {
         currentExerciseIdx++;
+        currentSets = [];
+        pendingRestoredSets = null;
         saveActiveSession();
         renderTrainingExercise();
       });
@@ -1695,6 +1801,7 @@ export function createTrainingModule(ctx = {}) {
         ${instrHTML}
         <button id="doneExBtn" class="btn-main btn-lime" style="margin-top:16px">Erledigt →</button>
         <button id="skipExBtn" class="btn-main btn-dark" style="margin-top:8px">Übung überspringen</button>
+        <button id="abandonTrainingBtn" class="owner-link" style="margin-top:14px;display:block;width:100%;text-align:center">Training abbrechen</button>
       </div>`;
 
     if (instrHTML) {
@@ -1709,7 +1816,12 @@ export function createTrainingModule(ctx = {}) {
 
     initExerciseMediaFallbacks(wrap);
 
-    currentSets = [];
+    if (Array.isArray(pendingRestoredSets)) {
+      currentSets = pendingRestoredSets;
+      pendingRestoredSets = null;
+    } else if (!Array.isArray(currentSets)) {
+      currentSets = [];
+    }
 
     function renderSetsList() {
       const listEl = document.getElementById("setsList");
@@ -1727,6 +1839,7 @@ export function createTrainingModule(ctx = {}) {
         btn.addEventListener("click", () => {
           currentSets.splice(parseInt(btn.dataset.idx), 1);
           renderSetsList();
+          saveActiveSession();
         });
       });
     }
@@ -1744,7 +1857,15 @@ export function createTrainingModule(ctx = {}) {
       currentSets.push({ weight, reps, rir });
       renderSetsList();
       showToast(`Satz ${currentSets.length} hinzugefügt.`, "success", 1200);
+      saveActiveSession();
       startSetRestTimer({ setNumber: currentSets.length });
+    });
+
+    document.getElementById("abandonTrainingBtn")?.addEventListener("click", () => {
+      if (!confirm("Training abbrechen? Fortschritt der offenen Übung geht lokal verloren (bereits gespeicherte Übungen bleiben).")) return;
+      abandonActiveTraining();
+      showToast("Training abgebrochen.", "info", 2000);
+      renderTrainingSetup();
     });
 
     // Buttons sofort aktivieren, nicht erst nach der Firebase-Abfrage des letzten Logs
@@ -1821,6 +1942,8 @@ export function createTrainingModule(ctx = {}) {
       completedBodies.add(ex.body);
       await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
       currentExerciseIdx++;
+      currentSets = [];
+      pendingRestoredSets = null;
       saveActiveSession();
       if (currentExerciseIdx >= currentWorkoutQueue.length) {
         await saveLastWorkout(key, strengthIdsFromQueue());
@@ -1832,6 +1955,8 @@ export function createTrainingModule(ctx = {}) {
     });
     document.getElementById("skipExBtn").addEventListener("click", () => {
       currentExerciseIdx++;
+      currentSets = [];
+      pendingRestoredSets = null;
       saveActiveSession();
       renderTrainingExercise();
     });
@@ -1912,6 +2037,10 @@ export function createTrainingModule(ctx = {}) {
     hideWorkoutProgress,
     startSetRestTimer,
     stopSetRestTimer,
+    saveActiveSession,
+    hasActiveSession,
+    resumeActiveTraining,
+    abandonActiveTraining,
     setSelectedDuration,
     getSelectedDuration
   };
