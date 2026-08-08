@@ -1439,13 +1439,156 @@ export function createTrainingModule(ctx = {}) {
     });
   }
 
+  function chartThemeColors() {
+    const styles = getComputedStyle(document.documentElement);
+    const read = (name, fallback) => (styles.getPropertyValue(name).trim() || fallback);
+    return {
+      accent: read("--accent-soft", "#cdf98a"),
+      accentFill: read("--accent-glow", "rgba(159, 232, 74, 0.18)"),
+      muted: read("--text-muted", "#999999"),
+      dim: read("--text-dim", "#666666"),
+      grid: read("--border", "#1c1c1c"),
+      text: read("--text-secondary", "#cccccc")
+    };
+  }
+
+  function formatHistoryTrend(entries) {
+    if (!entries.length) return { text: "Noch keine Daten", cls: "" };
+    const first = entries[0];
+    const last = entries[entries.length - 1];
+    const delta = Math.round((Number(last.weight) - Number(first.weight)) * 10) / 10;
+    if (!Number.isFinite(delta) || entries.length < 2) {
+      return { text: "Erste Einträge", cls: "" };
+    }
+    if (delta > 0) return { text: `↑ +${delta} kg`, cls: "is-up" };
+    if (delta < 0) return { text: `↓ ${delta} kg`, cls: "is-down" };
+    return { text: "→ stabil", cls: "" };
+  }
+
+  function renderHistoryProgressChart(canvas, entries) {
+    if (!canvas || typeof Chart === "undefined") return null;
+    const colors = chartThemeColors();
+    const points = entries.slice(-8);
+    const labels = points.map((e) =>
+      new Date(e.date).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
+    );
+    const weightData = points.map((e) => Number(e.weight) || 0);
+    const repsData = points.map((e) => Number(e.reps) || 0);
+
+    return new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Gewicht",
+            data: weightData,
+            yAxisID: "yWeight",
+            borderColor: colors.accent,
+            backgroundColor: colors.accentFill,
+            borderWidth: 2.5,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            pointBackgroundColor: colors.accent,
+            pointBorderColor: colors.accent,
+            fill: true,
+            tension: 0.35
+          },
+          {
+            label: "Wdh.",
+            data: repsData,
+            yAxisID: "yReps",
+            borderColor: colors.muted,
+            backgroundColor: "transparent",
+            borderWidth: 1.5,
+            borderDash: [4, 4],
+            pointRadius: 0,
+            pointHoverRadius: 3,
+            fill: false,
+            tension: 0.35
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 450, easing: "easeOutQuart" },
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: "rgba(17,17,17,0.94)",
+            titleColor: colors.text,
+            bodyColor: colors.text,
+            borderColor: colors.grid,
+            borderWidth: 1,
+            padding: 10,
+            displayColors: false,
+            callbacks: {
+              title: (items) => items?.[0]?.label || "",
+              label: (item) => {
+                if (item.dataset.yAxisID === "yWeight") return `${item.parsed.y} kg`;
+                return `${item.parsed.y} Wdh.`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            border: { display: false },
+            ticks: {
+              color: colors.dim,
+              font: { size: 10, family: "'DM Sans', sans-serif" },
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 5
+            }
+          },
+          yWeight: {
+            type: "linear",
+            position: "left",
+            grace: "12%",
+            grid: {
+              color: colors.grid,
+              drawBorder: false,
+              lineWidth: 1
+            },
+            border: { display: false },
+            ticks: {
+              color: colors.dim,
+              font: { size: 10, family: "'DM Mono', monospace" },
+              maxTicksLimit: 4,
+              padding: 6,
+              callback: (value) => `${value}`
+            }
+          },
+          yReps: {
+            type: "linear",
+            position: "right",
+            grace: "15%",
+            grid: { drawOnChartArea: false, drawBorder: false },
+            border: { display: false },
+            ticks: {
+              color: colors.dim,
+              font: { size: 10, family: "'DM Mono', monospace" },
+              maxTicksLimit: 3,
+              padding: 6
+            }
+          }
+        }
+      }
+    });
+  }
+
   async function renderUserHistory(user) {
     hideWorkoutProgress();
     const wrap = document.getElementById("trainingContent");
     wrap.innerHTML = `<div class="section-title">Historie: ${user}</div><div class="skeleton-card"><div class="skeleton-line" style="width:60%"></div><div class="skeleton-line" style="width:90%"></div><div class="skeleton-line" style="width:40%"></div></div>`;
     const history = await getFullUserHistory(user);
     const exIds = Object.keys(history);
-    let html = `<div class="section-title">Historie: ${user}</div>`;
+    let html = `<div class="section-title">Entwicklung</div>
+      <div class="sub" style="margin-top:-4px;margin-bottom:14px">Gewicht &amp; Wiederholungen der letzten Einheiten — schlank und klar.</div>`;
     html += `<div class="export-btn-wrap"><button id="exportCsvBtn" class="btn-main btn-dark" style="width:auto;padding:10px 18px;display:inline-block">⬇️ Trainingsdaten exportieren (CSV)</button></div>`;
     if (exIds.length === 0) {
       html += `<div class="info-box">Noch keine Übungen protokolliert.</div>`;
@@ -1465,9 +1608,24 @@ export function createTrainingModule(ctx = {}) {
           }
         });
 
-        html += `<div class="upcoming-wrap"><div class="upcoming-title">${exName}</div>`;
-        html += `<div class="hist-chart-wrap"><canvas id="${chartId}"></canvas></div>`;
-        entries.slice(0,10).forEach(e => {
+        const latest = chronological[chronological.length - 1];
+        const trend = formatHistoryTrend(chronological);
+        const latestLabel = latest
+          ? `${latest.weight} kg <span>× ${latest.reps} Wdh.</span>`
+          : "—";
+
+        html += `<div class="upcoming-wrap">
+          <div class="upcoming-title">${exName}</div>
+          <div class="hist-summary">
+            <div class="hist-summary-main">${latestLabel}</div>
+            <div class="hist-summary-trend ${trend.cls}">${trend.text}</div>
+          </div>
+          <div class="hist-legend">
+            <span class="hist-legend-item"><span class="hist-legend-swatch weight"></span>Gewicht</span>
+            <span class="hist-legend-item"><span class="hist-legend-swatch reps"></span>Wiederholungen</span>
+          </div>
+          <div class="hist-chart-wrap"><canvas id="${chartId}"></canvas></div>`;
+        chronological.slice().reverse().slice(0, 8).forEach(e => {
           const d = new Date(e.date).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"2-digit"});
           const isPR = prDates.has(e.date);
           const prBadge = isPR ? `<span class="pr-badge" title="Neues persönliches Bestgewicht">🏆 PR</span>` : "";
@@ -1530,34 +1688,10 @@ export function createTrainingModule(ctx = {}) {
     });
 
     if (exIds.length > 0) {
-      exIds.forEach(exId => {
-        const entries = [...history[exId]].sort((a,b) => a.date - b.date).slice(-15);
-        const labels = entries.map(e => new Date(e.date).toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"}));
-        const repsData = entries.map(e => e.reps);
-        const weightData = entries.map(e => e.weight);
+      exIds.forEach((exId) => {
+        const chronological = [...history[exId]].sort((a, b) => a.date - b.date);
         const ctx = document.getElementById(`histChart_${exId}`);
-        if (!ctx) return;
-        new Chart(ctx, {
-          type: "line",
-          data: {
-            labels,
-            datasets: [
-              { label: "Wiederholungen", data: repsData, borderColor: "#4da6ff", backgroundColor: "#4da6ff", yAxisID: "yReps", tension: 0.25, pointRadius: 3 },
-              { label: "Gewicht (kg)", data: weightData, borderColor: "#ff4d4d", backgroundColor: "#ff4d4d", yAxisID: "yWeight", tension: 0.25, pointRadius: 3 }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
-            plugins: { legend: { labels: { color: "#ddd", font: { size: 10 } } } },
-            scales: {
-              x: { ticks: { color: "#999", font: { size: 9 } }, grid: { color: "#1e1e1e" } },
-              yReps: { type: "linear", position: "left", ticks: { color: "#4da6ff", font: { size: 9 } }, grid: { color: "#1e1e1e" }, title: { display: true, text: "Wdh.", color: "#4da6ff", font: { size: 10 } } },
-              yWeight: { type: "linear", position: "right", ticks: { color: "#ff4d4d", font: { size: 9 } }, grid: { drawOnChartArea: false }, title: { display: true, text: "kg", color: "#ff4d4d", font: { size: 10 } } }
-            }
-          }
-        });
+        renderHistoryProgressChart(ctx, chronological);
       });
     }
   }

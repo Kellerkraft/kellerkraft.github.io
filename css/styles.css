@@ -140,7 +140,57 @@ html[data-theme="light"] {
 }
 .export-btn-wrap { text-align: center; margin-top: 14px; }
 .pr-badge { display: inline-block; background: linear-gradient(90deg, #ffb84d, #ffd84d); color: #1a1a0a; font-size: 10px; font-weight: 600; letter-spacing: .5px; padding: 2px 7px; border-radius: 20px; margin-left: 6px; vertical-align: middle; }
-.hist-chart-wrap { position: relative; height: 220px; margin: 10px 0 16px; max-width: 100%; overflow: hidden; }
+.hist-chart-wrap { position: relative; height: 160px; margin: 8px 0 4px; max-width: 100%; overflow: hidden; }
+.hist-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 0 8px;
+  flex-wrap: wrap;
+}
+.hist-summary-main {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.5px;
+  color: var(--text);
+  line-height: 1;
+}
+.hist-summary-main span { color: var(--accent-soft); }
+.hist-summary-trend {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+.hist-summary-trend.is-up { color: var(--accent-soft); }
+.hist-summary-trend.is-down { color: var(--danger-soft); }
+.hist-legend {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.hist-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.hist-legend-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.hist-legend-swatch.weight { background: var(--accent-soft); }
+.hist-legend-swatch.reps {
+  background: transparent;
+  border-top: 2px dashed var(--text-muted);
+  height: 0;
+  width: 14px;
+}
 .upcoming-rack { font-size: 11px; color: #8ab4ff; margin-top: 2px; letter-spacing: .3px; }
 .muscle-view-grid { display: flex; gap: 14px; justify-content: center; margin: 16px auto 4px; max-width: 360px; }
 .muscle-view-card { flex: 1; text-align: center; }
@@ -900,3 +950,5 @@ html[data-theme="light"] .set-rest-bar {
   border-bottom-color: color-mix(in srgb, var(--accent) 25%, var(--border));
 }
 html[data-theme="light"] .set-rest-btn--skip { color: #fff; }
+html[data-theme="light"] .hist-summary-main span { color: var(--accent); }
+html[data-theme="light"] .hist-summary-trend.is-up { color: var(--accent); }
