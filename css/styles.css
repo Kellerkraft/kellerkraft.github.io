@@ -223,6 +223,75 @@ img, video, canvas, svg, iframe { max-width: 100%; }
 }
 .workout-progress[hidden] { display: none !important; }
 
+/* ── Between-set rest timer (always visible in chrome) ── */
+.set-rest-bar {
+  flex-shrink: 0;
+  width: 100%;
+  z-index: 44;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-header));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  padding: 10px var(--space-3) 12px;
+}
+.set-rest-bar[hidden] { display: none !important; }
+.set-rest-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.set-rest-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.set-rest-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.set-rest-display {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 28px;
+  letter-spacing: 1px;
+  color: var(--accent-soft);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.set-rest-bar.is-done .set-rest-display { color: var(--accent); }
+.set-rest-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.set-rest-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--btn-dark-bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.set-rest-btn--skip {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+  color: #0a0a0a;
+}
+.set-rest-dur {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.set-rest-dur .btn-dur {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
 /* ── Bottom navigation (flex shell — avoids iOS fixed-bar jump) ── */
 .bottom-nav {
   position: relative;
@@ -826,3 +895,8 @@ html[data-theme="light"] .muscle.active { fill: var(--accent); stroke: var(--acc
 html[data-theme="light"] .legend-dot.active { background: var(--accent); border-color: var(--accent-soft); }
 html[data-theme="light"] .log-edit-btn, html[data-theme="light"] .log-delete-btn { background: var(--btn-dark-bg); border-color: var(--border-soft); }
 html[data-theme="light"] .workout-progress { background: var(--bg-header); border-bottom-color: var(--border); }
+html[data-theme="light"] .set-rest-bar {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-header));
+  border-bottom-color: color-mix(in srgb, var(--accent) 25%, var(--border));
+}
+html[data-theme="light"] .set-rest-btn--skip { color: #fff; }

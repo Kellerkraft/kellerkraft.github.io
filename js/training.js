@@ -200,6 +200,111 @@ export function createTrainingModule(ctx = {}) {
   function hideWorkoutProgress() {
     const bar = document.getElementById("workoutProgressBar");
     if (bar) bar.hidden = true;
+    stopSetRestTimer();
+  }
+
+  let setRestTimerInterval = null;
+  let setRestRemaining = 0;
+  let setRestPaused = false;
+
+  function stopSetRestTimer() {
+    clearInterval(setRestTimerInterval);
+    setRestTimerInterval = null;
+    setRestPaused = false;
+    const bar = document.getElementById("setRestBar");
+    if (bar) {
+      bar.hidden = true;
+      bar.classList.remove("is-done");
+    }
+  }
+
+  function getSavedRestDuration() {
+    const saved = parseInt(localStorage.getItem("kg_rest_duration"), 10);
+    return Number.isFinite(saved) && saved > 0 ? saved : 90;
+  }
+
+  function startSetRestTimer({ setNumber } = {}) {
+    clearInterval(setRestTimerInterval);
+    setRestPaused = false;
+    const duration = getSavedRestDuration();
+    setRestRemaining = duration;
+
+    const bar = document.getElementById("setRestBar");
+    const display = document.getElementById("setRestDisplay");
+    const label = document.getElementById("setRestLabel");
+    const pauseBtn = document.getElementById("setRestPauseBtn");
+    const skipBtn = document.getElementById("setRestSkipBtn");
+    const durRow = document.getElementById("setRestDurRow");
+    if (!bar || !display || !pauseBtn || !skipBtn || !durRow) return;
+
+    bar.hidden = false;
+    bar.classList.remove("is-done");
+    if (label) {
+      label.textContent = setNumber
+        ? `Pause nach Satz ${setNumber}`
+        : "Pause bis nächster Satz";
+    }
+    display.textContent = formatRestTime(setRestRemaining);
+    pauseBtn.textContent = "⏸";
+    pauseBtn.setAttribute("aria-label", "Pause pausieren");
+
+    durRow.innerHTML = [30, 60, 90, 120].map((s) =>
+      `<button type="button" class="btn-dur${s === duration ? " active" : ""}" data-sec="${s}">${s}s</button>`
+    ).join("");
+
+    function onFinished() {
+      clearInterval(setRestTimerInterval);
+      setRestTimerInterval = null;
+      setRestRemaining = 0;
+      display.textContent = "0:00";
+      bar.classList.add("is-done");
+      if (label) label.textContent = "Pause vorbei — nächster Satz";
+      showToast("Pause beendet – nächster Satz!", "success", 2500);
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    }
+
+    function tick() {
+      if (setRestPaused) return;
+      setRestRemaining -= 1;
+      if (setRestRemaining <= 0) {
+        onFinished();
+        return;
+      }
+      display.textContent = formatRestTime(setRestRemaining);
+    }
+    setRestTimerInterval = setInterval(tick, 1000);
+
+    durRow.querySelectorAll(".btn-dur").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const sec = parseInt(btn.dataset.sec, 10);
+        if (!Number.isFinite(sec)) return;
+        localStorage.setItem("kg_rest_duration", String(sec));
+        setRestRemaining = sec;
+        bar.classList.remove("is-done");
+        display.textContent = formatRestTime(setRestRemaining);
+        if (label) {
+          label.textContent = setNumber
+            ? `Pause nach Satz ${setNumber}`
+            : "Pause bis nächster Satz";
+        }
+        durRow.querySelectorAll(".btn-dur").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        if (!setRestTimerInterval) {
+          setRestTimerInterval = setInterval(tick, 1000);
+        }
+      });
+    });
+
+    pauseBtn.onclick = () => {
+      if (setRestRemaining <= 0) return;
+      setRestPaused = !setRestPaused;
+      pauseBtn.textContent = setRestPaused ? "▶" : "⏸";
+      pauseBtn.setAttribute("aria-label", setRestPaused ? "Pause fortsetzen" : "Pause pausieren");
+    };
+
+    skipBtn.onclick = () => {
+      stopSetRestTimer();
+    };
   }
   let selectedBody = new Set();
   let selectedLevel = null;
@@ -1405,10 +1510,11 @@ export function createTrainingModule(ctx = {}) {
   let restTimerInterval = null;
 
   function renderRestTimer() {
+    stopSetRestTimer();
     clearInterval(restTimerInterval);
     setWorkoutProgress(currentExerciseIdx + 1, currentWorkoutQueue.length);
     const wrap = document.getElementById("trainingContent");
-    const savedDuration = parseInt(localStorage.getItem("kg_rest_duration")) || 90;
+    const savedDuration = getSavedRestDuration();
     let remaining = savedDuration;
     const next = currentWorkoutQueue[currentExerciseIdx];
     const nextName = next?.name || "Nächste Übung";
@@ -1479,6 +1585,7 @@ export function createTrainingModule(ctx = {}) {
   }
 
   async function renderTrainingExercise() {
+    stopSetRestTimer();
     const wrap = document.getElementById("trainingContent");
     if (!writeKey()) {
       wrap.innerHTML = requireLoginHtml();
@@ -1637,6 +1744,7 @@ export function createTrainingModule(ctx = {}) {
       currentSets.push({ weight, reps, rir });
       renderSetsList();
       showToast(`Satz ${currentSets.length} hinzugefügt.`, "success", 1200);
+      startSetRestTimer({ setNumber: currentSets.length });
     });
 
     // Buttons sofort aktivieren, nicht erst nach der Firebase-Abfrage des letzten Logs
@@ -1802,6 +1910,8 @@ export function createTrainingModule(ctx = {}) {
     renderTrainingExercise,
     setWorkoutProgress,
     hideWorkoutProgress,
+    startSetRestTimer,
+    stopSetRestTimer,
     setSelectedDuration,
     getSelectedDuration
   };

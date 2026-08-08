@@ -48,6 +48,20 @@
   <div class="workout-progress-track"><div class="workout-progress-fill" id="workoutProgressFill"></div></div>
 </div>
 
+<div id="setRestBar" class="set-rest-bar" hidden>
+  <div class="set-rest-main">
+    <div class="set-rest-copy">
+      <span class="set-rest-label" id="setRestLabel">Pause bis nächster Satz</span>
+      <span class="set-rest-display font-mono" id="setRestDisplay">1:30</span>
+    </div>
+    <div class="set-rest-actions">
+      <button type="button" class="set-rest-btn" id="setRestPauseBtn" aria-label="Pause pausieren">⏸</button>
+      <button type="button" class="set-rest-btn set-rest-btn--skip" id="setRestSkipBtn" aria-label="Pause überspringen">⏭</button>
+    </div>
+  </div>
+  <div class="set-rest-dur" id="setRestDurRow" role="group" aria-label="Pausendauer"></div>
+</div>
+
 <div class="wrap">
 
   <!-- ========== HOME ========== -->
@@ -211,7 +225,7 @@
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.13.2</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.13.3</div>
 
 <nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
   <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">
