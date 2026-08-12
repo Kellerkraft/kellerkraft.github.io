@@ -1,5 +1,5 @@
 /**
- * Keller Gym — app orchestrator (Phase 1).
+ * Kellerkraft — app orchestrator (Phase 1).
  * Feature modules: auth, growth, reservations, exercises, training + services/*.
  */
 import { ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";

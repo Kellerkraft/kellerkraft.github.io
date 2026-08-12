@@ -1,5 +1,5 @@
 /**
- * Kellerkraft Gym — Firebase Realtime Database schema v2
+ * Kellerkraft — Firebase Realtime Database schema v2
  * Source of truth for paths, roles, and entity shapes.
  * See docs/data-model-v2.md for the full sketch and migration notes.
  */
