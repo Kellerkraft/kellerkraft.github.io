@@ -29,6 +29,7 @@ import {
 export function createTrainingModule(ctx = {}) {
   const BODY_LABELS = ctx.BODY_LABELS || ctx.bodyLabels || DATA_BODY_LABELS;
   const showToast = ctx.showToast || (() => {});
+  const refreshConnectivityBanner = ctx.refreshConnectivityBanner || (() => {});
   const recordWorkoutCompletion = ctx.recordWorkoutCompletion || (async () => {});
   const getAllExercises = ctx.getAllExercises || ctx.exercises?.getAllExercises;
   const findExercise = ctx.findExercise || ctx.exercises?.findExercise;
@@ -164,6 +165,11 @@ export function createTrainingModule(ctx = {}) {
         <div class="workout-complete-kicker">Session beendet</div>
         <div class="workout-complete-title">Starke Einheit</div>
         <div class="sub workout-complete-sub">${finishedCount} Übung${finishedCount === 1 ? "" : "en"} abgeschlossen</div>
+
+        <div id="workoutSyncPanel" class="workout-sync-card" aria-live="polite">
+          <div class="workout-sync-title">Speichern</div>
+          <p>Prüfe Sync-Status…</p>
+        </div>
 
         <div class="workout-tonnage-card">
           <div class="workout-tonnage-label">Bewegte Last</div>
@@ -449,6 +455,7 @@ export function createTrainingModule(ctx = {}) {
     } catch {
       // ignore localStorage errors
     }
+    refreshConnectivityBanner();
   }
 
   function clearActiveSession() {
@@ -463,6 +470,7 @@ export function createTrainingModule(ctx = {}) {
     currentSets = [];
     sessionVolumeKg = 0;
     sessionSetCount = 0;
+    refreshConnectivityBanner();
   }
 
   function readStoredSession() {
@@ -775,13 +783,15 @@ export function createTrainingModule(ctx = {}) {
     });
   }
 
-  async function saveExerciseLogWithFallback(key, exId, logEntry, { avgWeight, avgReps, setCount }) {
+  async function saveExerciseLogWithFallback(key, exId, logEntry, { avgWeight, avgReps, setCount, silent = false }) {
     try {
       const result = await persistLogEntry(key, exId, logEntry);
-      if (result.queued) {
-        showToast(`Offline gespeichert (${setCount} Sätze) — sync später.`, "info", 2800);
-      } else {
-        showToast(`Übung gespeichert (${setCount} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
+      if (!silent) {
+        if (result.queued) {
+          showToast(`Lokal gespeichert (${setCount} Sätze).`, "info", 2200);
+        } else {
+          showToast(`Übung gespeichert (${setCount} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
+        }
       }
       return true;
     } catch (err) {
@@ -789,10 +799,12 @@ export function createTrainingModule(ctx = {}) {
       const { sets, ...fallbackEntry } = logEntry;
       try {
         const result = await persistLogEntry(key, exId, fallbackEntry);
-        if (result.queued) {
-          showToast("Offline gespeichert (ohne Satz-Details) — sync später.", "info", 3500);
-        } else {
-          showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
+        if (!silent) {
+          if (result.queued) {
+            showToast("Lokal gespeichert (ohne Satz-Details).", "info", 3000);
+          } else {
+            showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "info", 4500);
+          }
         }
         return true;
       } catch (err2) {
@@ -814,13 +826,70 @@ export function createTrainingModule(ctx = {}) {
     finalExerciseIds
   }) {
     void (async () => {
-      await saveExerciseLogWithFallback(key, exId, logEntry, { avgWeight, avgReps, setCount });
+      await saveExerciseLogWithFallback(key, exId, logEntry, { avgWeight, avgReps, setCount, silent: true });
       await saveLastWorkout(key, progressExerciseIds, { silent: true });
       if (finalExerciseIds) {
         await saveLastWorkout(key, finalExerciseIds, { silent: true });
       }
       void refreshLastWorkoutBox();
+      refreshConnectivityBanner();
     })();
+  }
+
+  async function runWorkoutSync(panel) {
+    if (!isOnline()) {
+      showToast("Kein Internet — bitte WLAN oder Mobile Daten aktivieren.", "error", 3500);
+      return;
+    }
+    panel.className = "workout-sync-card";
+    panel.innerHTML = `<div class="workout-sync-title">Synchronisiere…</div><p>Dein Training wird hochgeladen.</p>`;
+    const { synced, remaining } = await flushOfflineQueue();
+    refreshConnectivityBanner();
+    if (remaining === 0) {
+      panel.className = "workout-sync-card workout-sync-card--ok";
+      panel.innerHTML = synced > 0
+        ? `✓ Training gespeichert (${synced} Einträge hochgeladen)`
+        : "✓ Alles gespeichert";
+      if (synced > 0) {
+        showToast("Training erfolgreich synchronisiert.", "success", 3000);
+      }
+      return;
+    }
+    panel.className = "workout-sync-card workout-sync-card--warn";
+    panel.innerHTML = `
+      <div class="workout-sync-title">Sync unvollständig</div>
+      <p>${synced} Einträge gespeichert, ${remaining} noch ausstehend. Bitte Internet prüfen und erneut versuchen.</p>
+      <button type="button" id="workoutSyncRetryBtn" class="btn-main btn-dark">Erneut synchronisieren</button>`;
+    document.getElementById("workoutSyncRetryBtn")?.addEventListener("click", () => {
+      void runWorkoutSync(panel);
+    });
+  }
+
+  async function initWorkoutSyncPanel() {
+    const panel = document.getElementById("workoutSyncPanel");
+    if (!panel) return;
+
+    const pending = await pendingCount();
+
+    if (pending === 0) {
+      panel.className = "workout-sync-card workout-sync-card--ok";
+      panel.innerHTML = "✓ Alles gespeichert";
+      return;
+    }
+
+    if (!isOnline()) {
+      panel.className = "workout-sync-card workout-sync-card--pending";
+      panel.innerHTML = `
+        <div class="workout-sync-title">Lokal gespeichert</div>
+        <p>Dein Training (${pending} ${pending === 1 ? "Eintrag" : "Einträge"}) liegt auf diesem Gerät. Verbinde dich mit dem Internet, um es in der Cloud zu speichern.</p>
+        <button type="button" id="workoutSyncNowBtn" class="btn-main btn-lime">Jetzt synchronisieren</button>`;
+      document.getElementById("workoutSyncNowBtn")?.addEventListener("click", () => {
+        void runWorkoutSync(panel);
+      });
+      return;
+    }
+
+    await runWorkoutSync(panel);
   }
 
   async function loadLogTree(key) {
@@ -1974,6 +2043,8 @@ export function createTrainingModule(ctx = {}) {
       });
       document.getElementById("restartTrainingBtn")?.addEventListener("click", renderTrainingSetup);
       document.getElementById("backFromCompleteBtn")?.addEventListener("click", renderTrainingSetup);
+      refreshConnectivityBanner();
+      void initWorkoutSyncPanel();
       return;
     }
     updateGrowthMvpInitialized(false);

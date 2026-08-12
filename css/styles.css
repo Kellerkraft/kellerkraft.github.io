@@ -124,6 +124,15 @@ html[data-theme="light"] {
   background: #f5c542;
   border-bottom: 1px solid #d4a017;
 }
+.offline-banner--training {
+  color: #0a0a0a;
+  background: color-mix(in srgb, var(--accent-soft) 88%, #fff);
+  border-bottom-color: color-mix(in srgb, var(--accent) 55%, #000);
+}
+html[data-theme="light"] .offline-banner--training {
+  color: #1a2e08;
+  background: color-mix(in srgb, var(--accent-soft) 75%, #fff);
+}
 .toast { background: #1c1c1c; border: 1px solid #333; color: #fff; padding: 12px 16px; border-radius: 10px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.4); opacity: 0; transform: translateY(-10px); transition: opacity .25s, transform .25s; pointer-events: auto; }
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.error { border-color: #5a1f1f; background: #2a1010; color: #ff9a9a; }
@@ -317,6 +326,41 @@ html[data-theme="light"] {
   font-size: 12px;
   color: var(--text-dim);
 }
+.workout-sync-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  text-align: left;
+}
+.workout-sync-card--pending {
+  border-color: color-mix(in srgb, #f5c542 55%, var(--border));
+  background: color-mix(in srgb, #f5c542 8%, var(--bg-card));
+}
+.workout-sync-card--ok {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-card));
+  text-align: center;
+  font-weight: 600;
+  color: var(--accent-soft);
+}
+.workout-sync-card--warn {
+  border-color: color-mix(in srgb, #f5c542 50%, var(--border));
+}
+.workout-sync-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.workout-sync-card p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.workout-sync-card .btn-main { margin-top: 0; }
 .workout-stat-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
