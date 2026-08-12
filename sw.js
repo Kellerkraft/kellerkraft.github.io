@@ -1,5 +1,5 @@
 /* Keller Gym — Service Worker (offline training MVP) */
-const CACHE_VERSION = "kg-offline-v23";
+const CACHE_VERSION = "kg-offline-v24";
 const PRECACHE = [
   "./",
   "./index.html",
@@ -27,6 +27,8 @@ const PRECACHE = [
   "./js/services/schema.js",
   "./js/services/users.js",
   "./assets/manifest.json",
+  "./assets/logo-light.png",
+  "./assets/logo-dark.png",
   "./assets/icon-192x192.png",
   "./assets/icon-32x32.png",
   "./assets/icon-16x16.png",

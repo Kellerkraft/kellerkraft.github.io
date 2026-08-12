@@ -46,10 +46,19 @@ export const DAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", 
 export const DAYS_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 
 export function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
   const btn = document.getElementById("themeToggleBtn");
-  if (btn) btn.textContent = theme === "light" ? "☀️" : "🌙";
-  localStorage.setItem("kg_theme", theme);
+  if (btn) btn.textContent = next === "light" ? "☀️" : "🌙";
+  const logo = document.getElementById("appLogo");
+  if (logo) {
+    logo.src = next === "light" ? "./assets/logo-light.png" : "./assets/logo-dark.png";
+  }
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) {
+    themeColor.setAttribute("content", next === "light" ? "#f5f5f5" : "#0a0a0a");
+  }
+  localStorage.setItem("kg_theme", next);
 }
 
 export function initTheme() {

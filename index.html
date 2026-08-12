@@ -13,6 +13,16 @@
 <meta name="apple-mobile-web-app-title" content="Keller Gym">
 <meta name="theme-color" content="#0a0a0a">
 <meta name="format-detection" content="telephone=no">
+<script>
+  (function () {
+    try {
+      var theme = localStorage.getItem("kg_theme") || "dark";
+      document.documentElement.setAttribute("data-theme", theme);
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#0a0a0a");
+    } catch (e) { /* ignore */ }
+  })();
+</script>
 <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
 <link rel="apple-touch-icon" sizes="167x167" href="./assets/apple-touch-icon-167x167.png">
 <link rel="apple-touch-icon" sizes="152x152" href="./assets/apple-touch-icon-152x152.png">
@@ -34,7 +44,16 @@
 
 <header class="app-header">
   <div class="app-brand">
-    <img src="./assets/icon-192x192.png" alt="" class="app-logo">
+    <img id="appLogo" src="./assets/logo-dark.png" alt="Kellerkraft Gym" class="app-logo" width="40" height="40">
+    <script>
+      (function () {
+        try {
+          var theme = document.documentElement.getAttribute("data-theme") || "dark";
+          var logo = document.getElementById("appLogo");
+          if (logo) logo.src = theme === "light" ? "./assets/logo-light.png" : "./assets/logo-dark.png";
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
     <div class="app-brand-text">
       <span class="app-wordmark">Keller Gym</span>
       <h1 id="navLabel">Übersicht</h1>
@@ -225,7 +244,7 @@
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.8</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.9</div>
 
 <nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
   <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">
