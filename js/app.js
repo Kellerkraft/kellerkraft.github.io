@@ -43,11 +43,6 @@ window.addEventListener("offline", () => {
 });
 window.addEventListener("online", () => {
   updateOfflineBanner();
-  const inTraining = typeof hasActiveSession === "function" && hasActiveSession();
-  if (inTraining) {
-    showToast("Wieder online — Sync startet nach dem Workout.", "info", 3000);
-    return;
-  }
   showToast("Wieder online — synchronisiere…", "success", 2500);
   flushTrainingOfflineQueue();
 });
@@ -61,6 +56,11 @@ function updateOfflineBanner() {
   const inTraining = typeof hasActiveSession === "function" && hasActiveSession();
 
   if (inTraining) {
+    if (isOnline()) {
+      el.hidden = true;
+      el.classList.remove("offline-banner--training");
+      return;
+    }
     el.hidden = false;
     el.classList.add("offline-banner--training");
     pendingCount().then((n) => {
@@ -466,7 +466,7 @@ async function boot() {
 
     await ensureSchemaVersion();
     trackEvent("boot_ready", { online: isOnline() });
-    if (isOnline() && !(typeof hasActiveSession === "function" && hasActiveSession())) {
+    if (isOnline()) {
       flushTrainingOfflineQueue();
     }
   } catch (err) {
