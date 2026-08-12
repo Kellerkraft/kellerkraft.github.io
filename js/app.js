@@ -252,9 +252,17 @@ function renderAll() {
   }
 
   const cardEl = document.getElementById("card");
-  cardEl.className = effectivelyBusy ? "hero-card hero-busy" : "hero-card hero-free";
-  cardEl.innerHTML = cardHTML;
-  document.getElementById("upcoming").innerHTML = upcomingHTML;
+  const cardClass = effectivelyBusy ? "hero-card hero-busy" : "hero-card hero-free";
+  if (cardEl.className !== cardClass) cardEl.className = cardClass;
+  if (cardEl._lastHTML !== cardHTML) {
+    cardEl.innerHTML = cardHTML;
+    cardEl._lastHTML = cardHTML;
+  }
+  const upcomingEl = document.getElementById("upcoming");
+  if (upcomingEl._lastHTML !== upcomingHTML) {
+    upcomingEl.innerHTML = upcomingHTML;
+    upcomingEl._lastHTML = upcomingHTML;
+  }
 
   let formHTML = "";
   if (!effectivelyBusy) {
@@ -278,9 +286,12 @@ function renderAll() {
     checkedInAs = "";
   }
 
-  document.getElementById("form").innerHTML = formHTML;
-
-  attachHomeListeners();
+  const formEl = document.getElementById("form");
+  if (formEl._lastFormKey !== formHTML) {
+    formEl.innerHTML = formHTML;
+    formEl._lastFormKey = formHTML;
+    attachHomeListeners();
+  }
   if (!isFreeCheckin) startLocalTick(currentStatus);
   if (!shouldSkipGrowthMvpRefresh()) {
     renderGrowthMvpSections();
@@ -500,6 +511,16 @@ async function boot() {
     onOnline: () => flushTrainingOfflineQueue(),
     onOffline: () => updateOfflineBanner()
   });
+
+  if (window.visualViewport) {
+    const wrapEl = document.querySelector(".wrap");
+    window.visualViewport.addEventListener("resize", () => {
+      if (!document.activeElement || !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+      requestAnimationFrame(() => {
+        document.activeElement.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    });
+  }
 
   // Return to an open workout after Safari/app reload when possible.
   if (typeof hasActiveSession === "function" && hasActiveSession()) {

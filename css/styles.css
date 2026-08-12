@@ -814,9 +814,130 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
   transition: background .15s, border-color .15s, color .15s;
 }
 .btn-dur.active { background: var(--accent-soft); border-color: var(--accent-soft); color: #0a0a0a; }
-#checkinBtn, #startTrainingBtn, #doneExBtn, .btn-main.btn-lime {
+#checkinBtn, #startTrainingBtn {
   font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; font-weight: 400;
 }
+
+/* ── Active workout session layout ── */
+.workout-session-active .bottom-nav { display: none; }
+.workout-session-active .wrap { padding-bottom: 0; }
+
+.workout-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 60;
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+  padding: 10px var(--space-3) max(10px, env(safe-area-inset-bottom, 0px));
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.workout-action-bar .btn-session-primary {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+  color: #0a0a0a;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity .15s;
+}
+.workout-action-bar .btn-session-primary:active { opacity: 0.85; }
+.workout-action-bar .btn-session-secondary {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-soft);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity .15s, border-color .15s;
+}
+.workout-action-bar .btn-session-secondary:active { opacity: 0.85; }
+
+.exercise-reco-slot {
+  min-height: 36px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  transition: opacity .15s;
+}
+
+.exercise-details-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.exercise-details-toggle:hover { color: var(--accent); }
+
+.exercise-details-collapsible { display: none; }
+.exercise-details-collapsible.open { display: block; }
+
+.sets-list-compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.sets-list-compact .set-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.sets-list-compact .set-chip strong {
+  color: var(--accent-soft);
+  font-weight: 600;
+}
+.sets-list-compact .set-chip .remove-set-btn {
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.input-row-3col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.input-row-3col .time-input {
+  height: 42px;
+  font-size: 14px;
+}
+
+html[data-theme="light"] .workout-action-bar { background: var(--bg); border-top-color: var(--border); }
+html[data-theme="light"] .workout-action-bar .btn-session-primary { color: #fff; }
+html[data-theme="light"] .exercise-reco-slot { color: var(--text-muted); }
+html[data-theme="light"] .sets-list-compact .set-chip { background: var(--bg-input); border-color: var(--border-soft); }
+html[data-theme="light"] .sets-list-compact .set-chip strong { color: var(--accent); }
 
 .owner-panel { background: var(--owner-bg); border: 1px solid var(--owner-border); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); min-width: 0; max-width: 100%; }
 .owner-title { font-size: 11px; letter-spacing: 0.06em; color: var(--owner); text-transform: uppercase; font-weight: 600; font-family: 'DM Mono', monospace; }

@@ -314,6 +314,7 @@ export function createTrainingModule(ctx = {}) {
     const bar = document.getElementById("workoutProgressBar");
     if (bar) bar.hidden = true;
     stopSetRestTimer();
+    document.body.classList.remove("workout-session-active");
   }
 
   let setRestTimerInterval = null;
@@ -450,7 +451,45 @@ export function createTrainingModule(ctx = {}) {
   let sessionSetCount = 0;
   const ACTIVE_SESSION_KEY = "kg_active_training_session_v1";
   const OVERRIDES_CACHE_KEY = "kg_exercise_overrides_cache_v1";
+  const SETUP_PREFS_KEY = "kg_setup_prefs_v1";
   const SESSION_MAX_AGE_MS = 18 * 60 * 60 * 1000;
+
+  function saveSetupPrefs() {
+    try {
+      localStorage.setItem(SETUP_PREFS_KEY, JSON.stringify({
+        duration: selectedDuration,
+        body: [...selectedBody],
+        level: selectedLevel,
+        goal: selectedGoal,
+        cardioEnabled,
+        cardio: [...selectedCardio],
+        mesoOptIn,
+        mesoFrequency,
+        mesoFocus,
+        savedAt: Date.now()
+      }));
+    } catch { /* ignore */ }
+  }
+
+  function loadSetupPrefs() {
+    try {
+      const raw = localStorage.getItem(SETUP_PREFS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function applySetupPrefs(prefs) {
+    if (!prefs) return;
+    if (Number.isFinite(prefs.duration)) selectedDuration = prefs.duration;
+    if (Array.isArray(prefs.body)) selectedBody = new Set(prefs.body);
+    if (prefs.level) selectedLevel = prefs.level;
+    if (prefs.goal) selectedGoal = prefs.goal;
+    if (prefs.cardioEnabled === true || prefs.cardioEnabled === false) cardioEnabled = prefs.cardioEnabled;
+    if (Array.isArray(prefs.cardio)) selectedCardio = new Set(prefs.cardio);
+    if (typeof prefs.mesoOptIn === "boolean") mesoOptIn = prefs.mesoOptIn;
+    if (MESO_FREQUENCIES.includes(Number(prefs.mesoFrequency))) mesoFrequency = Number(prefs.mesoFrequency);
+    if (prefs.mesoFocus) mesoFocus = prefs.mesoFocus;
+  }
 
   function readOverridesCacheSync() {
     try {
@@ -1576,10 +1615,18 @@ export function createTrainingModule(ctx = {}) {
         ? `<div class="info-box resume-session-card" style="margin-bottom:14px">
             <strong>Offenes Training gefunden</strong>
             <div class="sub" style="margin-top:6px">Du kannst genau dort weitermachen, wo du aufgehört hast — auch nach App-Wechsel.</div>
-            <button id="resumeTrainingBtn" class="btn-main btn-lime" style="margin-top:10px">Training fortsetzen →</button>
-            <button id="discardTrainingBtn" class="btn-main btn-dark" style="margin-top:8px">Verwerfen &amp; neu starten</button>
+            <button id="resumeTrainingBtn" class="btn-session-primary" style="margin-top:10px;width:100%">Training fortsetzen →</button>
+            <button id="discardTrainingBtn" class="btn-session-secondary" style="margin-top:8px;width:100%">Verwerfen &amp; neu starten</button>
           </div>`
         : ""}
+
+      ${(() => {
+        const prefs = loadSetupPrefs();
+        if (!prefs || !prefs.level) return "";
+        const bodyStr = (prefs.body || []).map(b => BODY_LABELS[b] || b).join(", ") || "Alle";
+        const goalStr = GOAL_LABELS[prefs.goal] || prefs.goal || "";
+        return `<button id="quickStartBtn" class="btn-session-primary" style="width:100%;margin-bottom:14px">Wie zuletzt: ${prefs.duration} min · ${bodyStr} · ${goalStr}</button>`;
+      })()}
 
       <div class="section-title" style="margin-top:12px">Dauer</div>
       <div class="dur-row" id="trainDurRow">
@@ -1592,17 +1639,13 @@ export function createTrainingModule(ctx = {}) {
       </div>
 
       <div class="section-title" style="margin-top:20px">Erfahrungslevel</div>
-      <div class="chip-row" id="levelChips" style="flex-direction:column; gap:8px; display:flex;">
-        ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}" style="width:100%; text-align:left; padding:12px 14px;">
-          <strong>${LEVEL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${LEVEL_DESC[k]}</span>
-        </button>`).join("")}
+      <div class="chip-row" id="levelChips">
+        ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}">${LEVEL_LABELS[k]}</button>`).join("")}
       </div>
 
       <div class="section-title" style="margin-top:20px">Trainingsziel</div>
-      <div class="chip-row" id="goalChips" style="flex-direction:column; gap:8px; display:flex;">
-        ${GOAL_ORDER.map((k) => `<button type="button" class="chip goal-chip${selectedGoal === k ? " active" : ""}" data-goal="${k}" style="width:100%; text-align:left; padding:12px 14px;">
-          <strong>${GOAL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${GOAL_DESC[k]}${k === "muskelaufbau" ? " · optional mit RP-Mesozyklus" : ""}</span>
-        </button>`).join("")}
+      <div class="chip-row" id="goalChips">
+        ${GOAL_ORDER.map((k) => `<button type="button" class="chip goal-chip${selectedGoal === k ? " active" : ""}" data-goal="${k}">${GOAL_LABELS[k]}</button>`).join("")}
       </div>
 
       <div id="mesoOptInWrap" style="${selectedGoal === "muskelaufbau" ? "" : "display:none"}">
@@ -1803,6 +1846,7 @@ export function createTrainingModule(ctx = {}) {
       if (useMeso && selectedLevel === "easy") {
         if (!confirm("Meso ist für Fortgeschrittene gedacht. Trotzdem starten?")) return;
       }
+      saveSetupPrefs();
       await prepareSessionOverrides();
       if (useMeso) {
         currentWorkoutQueue = buildMesocycleSession();
@@ -1834,6 +1878,34 @@ export function createTrainingModule(ctx = {}) {
       abandonActiveTraining();
       showToast("Altes Training verworfen.", "info", 1800);
       renderTrainingSetup();
+    });
+    document.getElementById("quickStartBtn")?.addEventListener("click", async () => {
+      if (!writeKey()) { alert("Bitte zuerst anmelden."); return; }
+      if (!trainingUser) { alert("Bitte Anzeigenamen setzen (Profil)."); return; }
+      const prefs = loadSetupPrefs();
+      if (!prefs) return;
+      applySetupPrefs(prefs);
+      const useMeso = mesoOptIn && selectedGoal === "muskelaufbau";
+      if (!selectedLevel) { showToast("Bitte Level wählen.", "error"); return; }
+      if (!useMeso && selectedBody.size === 0) { showToast("Bitte Bereiche wählen.", "error"); return; }
+      await prepareSessionOverrides();
+      if (useMeso) {
+        currentWorkoutQueue = buildMesocycleSession();
+        sessionMesoSetsByBody = {};
+      } else {
+        activeMesoRx = null;
+        sessionMesoSetsByBody = {};
+        currentWorkoutQueue = buildWorkout();
+      }
+      currentExerciseIdx = 0;
+      completedBodies = new Set();
+      currentSets = [];
+      pendingRestoredSets = null;
+      sessionVolumeKg = 0;
+      sessionSetCount = 0;
+      sessionPhase = "warmup";
+      saveActiveSession();
+      renderWarmup();
     });
     document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
       const key = readKey();
@@ -2241,6 +2313,7 @@ export function createTrainingModule(ctx = {}) {
     const setupHint = exerciseSetupHint(next);
     const nextBody = next && !isCardioStep(next) ? (BODY_LABELS[next.body] || next.body) : (isCardioStep(next) ? "Cardio" : "");
 
+    document.body.classList.add("workout-session-active");
     wrap.innerHTML = `<div class="section-title">Pause</div>
       <div class="rest-next-card">
         <div class="rest-next-label">Als Nächstes</div>
@@ -2254,8 +2327,8 @@ export function createTrainingModule(ctx = {}) {
         <div class="dur-row" id="restDurRow" style="margin-bottom:14px">
           ${[30,60,90,120].map(s=>`<button class="btn-dur${s===savedDuration?" active":""}" data-sec="${s}">${s}s</button>`).join("")}
         </div>
-        <button id="restPauseBtn" class="btn-main btn-dark" style="margin-bottom:8px">⏸ Pausieren</button>
-        <button id="restSkipBtn" class="btn-main btn-lime">Überspringen →</button>
+        <button id="restPauseBtn" class="btn-session-secondary" style="width:100%;margin-bottom:8px">⏸ Pausieren</button>
+        <button id="restSkipBtn" class="btn-session-primary" style="width:100%">Weiter →</button>
       </div>`;
 
     let isPaused = false;
@@ -2366,8 +2439,8 @@ export function createTrainingModule(ctx = {}) {
         <div class="exercise-session-name">${ex.name}</div>
         <div class="info-box" style="margin-bottom:14px">${ex.note || `${ex.minutes} Min. ${ex.name}`}</div>
         <div class="sub" style="margin-bottom:16px">Kein Gewichtslog — einfach die Zeit absolvieren und fertig tippen.</div>
-        <button id="doneExBtn" class="btn-main btn-lime" style="margin-top:8px">Cardio erledigt →</button>
-        <button id="skipExBtn" class="btn-main btn-dark" style="margin-top:8px">Überspringen</button>
+        <button id="doneExBtn" class="btn-session-primary" style="margin-top:8px;width:100%">Cardio erledigt →</button>
+        <button id="skipExBtn" class="btn-session-secondary" style="margin-top:8px;width:100%">Überspringen</button>
       </div>`;
       document.getElementById("doneExBtn").addEventListener("click", () => {
         const key = writeKey();
@@ -2411,7 +2484,7 @@ export function createTrainingModule(ctx = {}) {
     const display = getExerciseDisplay(ex, overrides);
     const mediaHTML = renderExerciseMediaHtml(ex, overrides, { compact: true });
     const instrHTML = display.steps.length ? `
-        <button id="toggleInstrBtn" class="btn-main btn-dark" style="margin-top:10px;margin-bottom:0">📋 Anleitung anzeigen</button>
+        <button id="toggleInstrBtn" class="exercise-details-toggle" style="margin-top:6px">📋 Anleitung anzeigen</button>
         <div id="instrBox" style="display:none;margin-top:10px;padding:12px;background:#0d0d0d;border-radius:8px">
           <ul style="margin:0;padding-left:18px;color:#ddd;line-height:1.6">
             ${display.steps.map(s => `<li>${s}</li>`).join("")}
@@ -2423,35 +2496,48 @@ export function createTrainingModule(ctx = {}) {
           <div class="field-label">${ex.rackLabel || "Rack-Einstellung"} (Stufe)</div>
           <input type="number" step="1" id="logRackSetting" class="time-input" placeholder="z.B. 5">
         </div>` : "";
-    wrap.innerHTML = `<div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
+    document.body.classList.add("workout-session-active");
+    const setsLabel = ex.mesoTargetSets ? `Sätze <span style="color:var(--text-dim);font-weight:400">(Soll: ${ex.mesoTargetSets})</span>` : "Sätze";
+    wrap.innerHTML = `<div class="upcoming-wrap" style="margin-bottom:0;border-bottom:none;border-radius:var(--radius-md) var(--radius-md) 0 0">
+        <div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
         <div class="exercise-session-name">${display.name}</div>
+        <div class="exercise-reco-slot" id="recoNote">Lade letzten Wert…</div>
         ${mesoBannerHtml(ex)}
-        ${mediaHTML}
-        <div class="sub" id="recoNote" style="color:#999;margin-bottom:14px">Lade letzten Wert…</div>
-        <div class="field-label" style="margin-bottom:6px">Sätze${ex.mesoTargetSets ? ` <span style="color:#999;font-weight:400">(Soll: ${ex.mesoTargetSets})</span>` : ""}</div>
-        <div id="setsList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
-        <div class="time-grid">
-          <div><div class="field-label">Gewicht (kg)</div><input type="number" step="0.5" id="logWeight" class="time-input" placeholder="z.B. 10"></div>
-          <div><div class="field-label">Wiederholungen</div><input type="number" id="logReps" class="time-input" placeholder="z.B. 10"></div>
+        <div class="field-label" style="margin-bottom:4px">${setsLabel}</div>
+        <div id="setsList" class="sets-list-compact"></div>
+        <div class="input-row-3col">
+          <div><div class="field-label">Gewicht</div><input type="number" step="0.5" id="logWeight" class="time-input" placeholder="kg"></div>
+          <div><div class="field-label">Wdh.</div><input type="number" id="logReps" class="time-input" placeholder="10"></div>
+          <div><div class="field-label">RIR${ex.mesoTargetRirMin != null ? ` (${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax})` : ""}</div><input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : "2"}" value="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : ""}"></div>
         </div>
-        <div style="margin-top:10px">
-          <div class="field-label">RIR (Wdh. bis Muskelversagen übrig)${ex.mesoTargetRirMin != null ? ` <span style="color:#999;font-weight:400">Ziel ${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax}</span>` : ""}</div>
-          <input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : "z.B. 2"}" value="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : ""}">
+        <button id="toggleDetailsBtn" class="exercise-details-toggle">▸ Mehr (Anleitung, Zielbereich, Media)</button>
+        <div id="exerciseDetailsCollapsible" class="exercise-details-collapsible">
+          ${mediaHTML}
+          <div class="time-grid" style="margin-top:10px">
+            <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}"></div>
+            <div><div class="field-label">Ziel max. Wdh.</div><input type="number" id="logMax" class="time-input" placeholder="${ex.defMax}"></div>
+          </div>
+          ${rackFieldHTML}
+          ${instrHTML ? `<div style="margin-top:10px">${instrHTML}</div>` : ""}
         </div>
-        <button id="addSetBtn" class="btn-main btn-dark" style="margin-top:8px">+ Satz hinzufügen</button>
-        <div class="time-grid" style="margin-top:12px">
-          <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}"></div>
-          <div><div class="field-label">Ziel max. Wdh.</div><input type="number" id="logMax" class="time-input" placeholder="${ex.defMax}"></div>
-        </div>
-        ${rackFieldHTML}
-        ${instrHTML}
-        <button id="doneExBtn" class="btn-main btn-lime" style="margin-top:16px">Erledigt →</button>
-        <button id="skipExBtn" class="btn-main btn-dark" style="margin-top:8px">Übung überspringen</button>
-        <button id="abandonTrainingBtn" class="owner-link" style="margin-top:14px;display:block;width:100%;text-align:center">Training abbrechen</button>
-      </div>`;
+      </div>
+      <div class="workout-action-bar" id="workoutActionBar">
+        <button id="addSetBtn" class="btn-session-primary">+ Satz loggen</button>
+        <button id="doneExBtn" class="btn-session-secondary">Fertig</button>
+        <button id="skipExBtn" class="btn-session-secondary">Skip</button>
+      </div>
+      <button id="abandonTrainingBtn" class="owner-link" style="margin-top:8px;display:block;width:100%;text-align:center;padding-bottom:env(safe-area-inset-bottom, 8px)">Training abbrechen</button>`;
+
+    document.getElementById("toggleDetailsBtn")?.addEventListener("click", () => {
+      const panel = document.getElementById("exerciseDetailsCollapsible");
+      const btn = document.getElementById("toggleDetailsBtn");
+      const isOpen = panel.classList.contains("open");
+      panel.classList.toggle("open", !isOpen);
+      btn.textContent = isOpen ? "▸ Mehr (Anleitung, Zielbereich, Media)" : "▾ Weniger";
+    });
 
     if (instrHTML) {
-      document.getElementById("toggleInstrBtn").addEventListener("click", () => {
+      document.getElementById("toggleInstrBtn")?.addEventListener("click", () => {
         const box = document.getElementById("instrBox");
         const btn = document.getElementById("toggleInstrBtn");
         const isHidden = box.style.display === "none";
@@ -2473,15 +2559,15 @@ export function createTrainingModule(ctx = {}) {
       const listEl = document.getElementById("setsList");
       if (!listEl) return;
       if (!currentSets.length) {
-        listEl.innerHTML = `<div class="sub" style="color:#777">Noch keine Sätze hinzugefügt.</div>`;
+        listEl.innerHTML = "";
         return;
       }
       listEl.innerHTML = currentSets.map((s, i) => `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:#0d0d0d;border-radius:8px;padding:8px 12px">
-          <span style="color:#ddd">Satz ${i+1}: <strong style="color:#cdf94a">${s.reps}</strong> Wdh. bei <strong style="color:#cdf94a">${s.weight}</strong> kg${s.rir != null ? ` <span style="color:#999">(RIR ${s.rir})</span>` : ""}</span>
-          <button data-idx="${i}" class="removeSetBtn" style="background:none;border:none;color:#f55;font-size:16px;cursor:pointer;padding:0 4px">✕</button>
-        </div>`).join("");
-      listEl.querySelectorAll(".removeSetBtn").forEach(btn => {
+        <span class="set-chip">
+          <strong>${s.weight}</strong>kg × <strong>${s.reps}</strong>${s.rir != null ? ` R${s.rir}` : ""}
+          <button data-idx="${i}" class="remove-set-btn" aria-label="Satz entfernen">✕</button>
+        </span>`).join("");
+      listEl.querySelectorAll(".remove-set-btn").forEach(btn => {
         btn.addEventListener("click", () => {
           currentSets.splice(parseInt(btn.dataset.idx), 1);
           renderSetsList();
@@ -2519,6 +2605,20 @@ export function createTrainingModule(ctx = {}) {
       saveActiveSession();
       startSetRestTimer({ setNumber: currentSets.length });
     });
+
+    const updatePrimaryLabel = () => {
+      const btn = document.getElementById("addSetBtn");
+      if (!btn) return;
+      const w = document.getElementById("logWeight")?.value;
+      const r = document.getElementById("logReps")?.value;
+      if (w && r) {
+        btn.textContent = `+ ${w}kg × ${r}`;
+      } else {
+        btn.textContent = "+ Satz loggen";
+      }
+    };
+    document.getElementById("logWeight")?.addEventListener("input", updatePrimaryLabel);
+    document.getElementById("logReps")?.addEventListener("input", updatePrimaryLabel);
 
     document.getElementById("abandonTrainingBtn")?.addEventListener("click", () => {
       if (!confirm("Training abbrechen? Fortschritt der offenen Übung geht lokal verloren (bereits gespeicherte Übungen bleiben).")) return;
