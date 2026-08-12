@@ -47,11 +47,15 @@
     if (!isIOS) return;
     function probeSafeArea() {
       var probe = document.createElement("div");
-      probe.style.cssText = "position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);visibility:hidden;pointer-events:none";
+      probe.style.cssText = "position:fixed;bottom:0;left:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none";
       document.body.appendChild(probe);
-      var inset = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+      var inset = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
       probe.remove();
-      if (inset < 8) document.documentElement.classList.add("ios-safe-fallback");
+      var standalone = window.matchMedia("(display-mode: standalone)").matches
+        || window.matchMedia("(display-mode: fullscreen)").matches
+        || window.navigator.standalone === true;
+      /* Opaque status bar → top inset is 0 by design; only fall back for missing bottom inset in PWA */
+      if (standalone && inset < 8) document.documentElement.classList.add("ios-bottom-safe-fallback");
     }
     if (document.body) probeSafeArea();
     else document.addEventListener("DOMContentLoaded", probeSafeArea, { once: true });
@@ -266,7 +270,7 @@
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.12</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.13</div>
 
 <nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
   <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">
