@@ -831,6 +831,9 @@ export function createTrainingModule(ctx = {}) {
       if (finalExerciseIds) {
         await saveLastWorkout(key, finalExerciseIds, { silent: true });
       }
+      if (isOnline()) {
+        await flushOfflineQueue();
+      }
       void refreshLastWorkoutBox();
       refreshConnectivityBanner();
     })();
