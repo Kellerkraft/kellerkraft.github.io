@@ -939,6 +939,36 @@ html[data-theme="light"] .exercise-reco-slot { color: var(--text-muted); }
 html[data-theme="light"] .sets-list-compact .set-chip { background: var(--bg-input); border-color: var(--border-soft); }
 html[data-theme="light"] .sets-list-compact .set-chip strong { color: var(--accent); }
 
+/* ── Training tab: guest login + setup ── */
+.training-guest-card {
+  background: var(--bg-card);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-3);
+  text-align: center;
+  margin-top: 4px;
+}
+.training-guest-kicker {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.training-guest-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  letter-spacing: 1px;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+.training-guest-card .sub {
+  margin-bottom: var(--space-3);
+  line-height: 1.5;
+}
+
 .owner-panel { background: var(--owner-bg); border: 1px solid var(--owner-border); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); min-width: 0; max-width: 100%; }
 .owner-title { font-size: 11px; letter-spacing: 0.06em; color: var(--owner); text-transform: uppercase; font-weight: 600; font-family: 'DM Mono', monospace; }
 .time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); min-width: 0; }

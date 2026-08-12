@@ -5,7 +5,7 @@
 import { ref, onValue, set, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { db } from "./firebase.js";
 import { ensureAuth, watchAuth, onAuthChange, getAuthSnapshot } from "./auth.js";
-import { initAuthPanel } from "./auth-ui.js";
+import { initAuthPanel, openAuthPanelForLogin } from "./auth-ui.js";
 import { initTelemetry, trackEvent, trackError, exposeTelemetryGlobal } from "./telemetry.js";
 import { ensureSchemaVersion } from "./services/schema.js";
 import { loadUserRole, isOwnerRole } from "./services/roles.js";
@@ -179,6 +179,10 @@ const trainingModule = createTrainingModule({
   recordWorkoutCompletion,
   showToast,
   refreshConnectivityBanner: () => connectivityBanner.refresh(),
+  onGoToLogin: () => {
+    switchTab("home");
+    requestAnimationFrame(() => openAuthPanelForLogin());
+  },
   bodyLabels: BODY_LABELS,
   ...exercisesModule
 });

@@ -157,6 +157,18 @@ export function initAuthPanel(deps) {
   return onAuthChange(render);
 }
 
+/** Open guest login form on the home tab (used from Training). */
+export function openAuthPanelForLogin() {
+  const panel = document.getElementById("authCollapsible");
+  const btn = document.getElementById("authToggleBtn");
+  if (panel && btn && !panel.classList.contains("open")) {
+    panel.classList.add("open");
+    btn.textContent = "▾ Anmelden / Registrieren";
+  }
+  document.getElementById("authPanel")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("authEmailInput")?.focus();
+}
+
 function escapeHtml(s) {
   return String(s || "")
     .replace(/&/g, "&amp;")

@@ -108,11 +108,11 @@ export function createTrainingModule(ctx = {}) {
 
   function requireLoginHtml() {
     return `
-      <div class="section-title">Training</div>
-      <div class="info-box">
-        Training ist nur nach Anmeldung möglich — damit deine Daten fest zu deinem Konto gehören.
-        <br><br>
-        Gehe zur <strong>Übersicht</strong>, melde dich mit E-Mail und Passwort an, und speichere deinen Profilnamen.
+      <div class="training-guest-card">
+        <div class="training-guest-kicker">Training</div>
+        <div class="training-guest-title">Anmelden zum Starten</div>
+        <p class="sub">Speichere Sätze, Fortschritt und Streaks an deinem Konto — auch offline im Keller.</p>
+        <button type="button" id="trainingGoLoginBtn" class="btn-main btn-lime">Anmelden →</button>
       </div>`;
   }
 
@@ -1566,6 +1566,9 @@ export function createTrainingModule(ctx = {}) {
     if (!isPermanent || !uid) {
       ownerViewKey = null;
       wrap.innerHTML = requireLoginHtml();
+      document.getElementById("trainingGoLoginBtn")?.addEventListener("click", () => {
+        ctx.onGoToLogin?.();
+      });
       return;
     }
 
@@ -1592,29 +1595,12 @@ export function createTrainingModule(ctx = {}) {
 
     wrap.innerHTML = `
       ${ownerChipsHTML}
-      <div class="section-title">${viewingOther ? "Ansicht fremdes Profil" : "Dein Trainingsprofil"}</div>
-      <div class="info-box" style="margin-bottom:12px">
-        Angemeldet als <strong>${email || "Konto"}</strong><br>
-        Anzeigename: <strong>${trainingUser || "— bitte unter Übersicht im Profil setzen —"}</strong>
-        ${viewingOther ? `<br><span style="color:#f5c542">Owner schaut Daten von Key <code>${ownerViewKey}</code> an (nur Lesen/Verwalten).</span>` : ""}
-      </div>
-      ${!viewingOther ? `
-        <input id="userNameInput" class="name-input" placeholder="Dein Anzeigename" maxlength="40" value="${trainingUser}">
-        <div class="sub" style="margin-bottom:10px">Name wird in deinem Profil gespeichert — Trainingsdaten liegen an deinem Konto (nicht am Namen).</div>
-      ` : ""}
-      <div id="lastWorkoutBox"></div>
-      <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
 
       ${!viewingOther ? `
-      <div class="section-title" style="margin-top:24px">AI Workout Generator</div>
-      <div class="info-box" style="margin-bottom:14px">
-        Erstellt ein <strong>AI-optimiertes Workout</strong> je nach Trainingsbereich, Dauer und Erfahrungslevel.
-        Alle Workouts (AI, eigene Pläne, Meso) speichern Sätze lokal — auch ohne Internet; Sync später.
-      </div>
       ${hasActiveSession()
-        ? `<div class="info-box resume-session-card" style="margin-bottom:14px">
+        ? `<div class="info-box resume-session-card" style="margin-bottom:12px">
             <strong>Offenes Training gefunden</strong>
-            <div class="sub" style="margin-top:6px">Du kannst genau dort weitermachen, wo du aufgehört hast — auch nach App-Wechsel.</div>
+            <div class="sub" style="margin-top:6px">Weitermachen, wo du aufgehört hast.</div>
             <button id="resumeTrainingBtn" class="btn-session-primary" style="margin-top:10px;width:100%">Training fortsetzen →</button>
             <button id="discardTrainingBtn" class="btn-session-secondary" style="margin-top:8px;width:100%">Verwerfen &amp; neu starten</button>
           </div>`
@@ -1628,31 +1614,34 @@ export function createTrainingModule(ctx = {}) {
         return `<button id="quickStartBtn" class="btn-session-primary" style="width:100%;margin-bottom:14px">Wie zuletzt: ${prefs.duration} min · ${bodyStr} · ${goalStr}</button>`;
       })()}
 
-      <div class="section-title" style="margin-top:12px">Dauer</div>
+      <div class="section-title">Workout einstellen</div>
+      ${!trainingUser ? `<div class="info-box" style="margin-bottom:10px;padding:10px 12px;font-size:13px">Anzeigename fehlt — bitte unten unter <strong>Profil</strong> setzen.</div>` : ""}
+
+      <div class="section-title" style="margin-top:4px">Dauer</div>
       <div class="dur-row" id="trainDurRow">
         ${[15, 30, 45, 60].map((m) => `<button class="btn-dur${m === selectedDuration ? " active" : ""}" data-min="${m}">${m} min</button>`).join("")}
       </div>
 
-      <div class="section-title" style="margin-top:20px">Trainingsbereich</div>
+      <div class="section-title" style="margin-top:16px">Trainingsbereich</div>
       <div class="chip-row" id="bodyChips">
         ${Object.entries(BODY_LABELS).map(([k, l]) => `<button class="chip${selectedBody.has(k) ? " active" : ""}" data-body="${k}">${l}</button>`).join("")}
       </div>
 
-      <div class="section-title" style="margin-top:20px">Erfahrungslevel</div>
+      <div class="section-title" style="margin-top:16px">Erfahrungslevel</div>
       <div class="chip-row" id="levelChips">
         ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}">${LEVEL_LABELS[k]}</button>`).join("")}
       </div>
 
-      <div class="section-title" style="margin-top:20px">Trainingsziel</div>
+      <div class="section-title" style="margin-top:16px">Trainingsziel</div>
       <div class="chip-row" id="goalChips">
         ${GOAL_ORDER.map((k) => `<button type="button" class="chip goal-chip${selectedGoal === k ? " active" : ""}" data-goal="${k}">${GOAL_LABELS[k]}</button>`).join("")}
       </div>
 
       <div id="mesoOptInWrap" style="${selectedGoal === "muskelaufbau" ? "" : "display:none"}">
-        <div class="section-title" style="margin-top:20px">RP Hypertrophie-Plan</div>
+        <div class="section-title" style="margin-top:16px">RP Hypertrophie-Plan</div>
         <button type="button" id="mesoOptInBtn" class="chip meso-opt-chip${mesoOptIn ? " active" : ""}" style="width:100%; text-align:left; padding:14px 16px;">
           <strong>${mesoOptIn ? "✓ RP-Mesozyklus aktiv" : "RP-Mesozyklus aktivieren"}</strong><br>
-          <span style="font-size:0.85em; opacity:0.75;">5 Wochen Aufbau → Peak → Deload · Satzziele &amp; RIR · auch für eigene Ober-/Unterkörper-Pläne</span>
+          <span style="font-size:0.85em; opacity:0.75;">5 Wochen Aufbau → Peak → Deload · Satzziele &amp; RIR</span>
         </button>
         <input type="checkbox" id="mesoOptInCheck" ${mesoOptIn ? "checked" : ""} hidden aria-hidden="true">
         <div id="mesoSetupPanel" style="margin-top:12px;${mesoOptIn ? "" : "display:none"}">
@@ -1689,28 +1678,57 @@ export function createTrainingModule(ctx = {}) {
               </div>
               ${selectedLevel && selectedLevel !== "advanced"
                 ? `<div class="sub" style="margin-top:8px;color:#f5c542">Hinweis: Meso ist für Fortgeschrittene gedacht — Level „Fortgeschritten“ empfohlen.</div>`
-                : `<div class="sub" style="margin-top:8px">Für AI-Sessions wählt die App den Split. Eigene Ober-/Unterkörper-Workouts behalten deine Übungen und bekommen Soll-Sätze/RIR.</div>`}
+                : `<div class="sub" style="margin-top:8px">Für AI-Sessions wählt die App den Split. Eigene Workouts behalten deine Übungen und bekommen Soll-Sätze/RIR.</div>`}
             `;
           })()}
         </div>
       </div>
 
-      <div class="section-title" style="margin-top:20px">Cardio dazu?</div>
+      <div class="section-title" style="margin-top:16px">Cardio dazu?</div>
       <div class="chip-row" id="cardioYesNoRow">
         <button type="button" class="chip${cardioEnabled === true ? " active" : ""}" data-cardio="yes">Ja</button>
         <button type="button" class="chip${cardioEnabled === false ? " active" : ""}" data-cardio="no">Nein</button>
       </div>
       <div id="cardioOptionsWrap" style="${cardioEnabled === true ? "" : "display:none"}">
-        <div class="sub" style="margin:8px 0 6px">Welche Möglichkeiten? (Mehrfachauswahl — passend wird eine gewählt)</div>
+        <div class="sub" style="margin:8px 0 6px">Welche Möglichkeiten? (Mehrfachauswahl)</div>
         <div class="chip-row" id="cardioModChips">
           ${CARDIO_OPTIONS.map((c) => `<button type="button" class="chip${selectedCardio.has(c.id) ? " active" : ""}" data-cardioid="${c.id}">${c.label}</button>`).join("")}
         </div>
       </div>
 
-      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">${mesoOptIn && selectedGoal === "muskelaufbau" ? "Meso-Session starten →" : "AI Workout generieren →"}</button>
+      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:20px">${mesoOptIn && selectedGoal === "muskelaufbau" ? "Meso-Session starten →" : "Workout starten →"}</button>
       <div id="customWorkoutsSection"></div>
-      ` : `<div class="info-box" style="margin-top:16px">Im Owner-Fremdprofil kannst du Historie einsehen/löschen, aber kein Workout für andere starten.</div>`}
+
+      <button type="button" id="toggleProfileSetupBtn" class="exercise-details-toggle" style="margin-top:20px;width:100%;text-align:left">▸ Profil &amp; Verlauf</button>
+      <div id="profileSetupCollapsible" class="exercise-details-collapsible">
+        <div class="info-box" style="margin-top:8px;margin-bottom:12px">
+          Angemeldet als <strong>${email || "Konto"}</strong><br>
+          Anzeigename: <strong>${trainingUser || "— noch nicht gesetzt —"}</strong>
+        </div>
+        <input id="userNameInput" class="name-input" placeholder="Dein Anzeigename" maxlength="40" value="${trainingUser}">
+        <div class="sub" style="margin:8px 0 10px">Name wird in deinem Profil gespeichert.</div>
+        <div id="lastWorkoutBox"></div>
+        <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
+      </div>
+      ` : `
+      <div class="section-title">${viewingOther ? "Ansicht fremdes Profil" : "Profil"}</div>
+      <div class="info-box" style="margin-bottom:12px">
+        Angemeldet als <strong>${email || "Konto"}</strong><br>
+        Anzeigename: <strong>${trainingUser || "—"}</strong>
+        ${viewingOther ? `<br><span style="color:#f5c542">Owner schaut Daten von Key <code>${ownerViewKey}</code> an.</span>` : ""}
+      </div>
+      <div id="lastWorkoutBox"></div>
+      <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
+      <div class="info-box" style="margin-top:16px">Im Owner-Fremdprofil kannst du Historie einsehen/löschen, aber kein Workout für andere starten.</div>`}
     `;
+
+    document.getElementById("toggleProfileSetupBtn")?.addEventListener("click", () => {
+      const panel = document.getElementById("profileSetupCollapsible");
+      const btn = document.getElementById("toggleProfileSetupBtn");
+      const isOpen = panel.classList.contains("open");
+      panel.classList.toggle("open", !isOpen);
+      btn.textContent = isOpen ? "▸ Profil & Verlauf" : "▾ Profil & Verlauf";
+    });
 
     if (isOwner) {
       document.querySelectorAll(".profile-chip").forEach((btn) => {
