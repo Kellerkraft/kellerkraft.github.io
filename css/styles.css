@@ -884,9 +884,10 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
 /* ── Active workout session layout ── */
 .workout-session-active .bottom-nav { display: none; }
 .workout-session-active .wrap { padding-bottom: 0; }
-/* Reserve chrome bar space during an active workout to avoid layout jump. */
-.workout-session-active .workout-progress[hidden],
-.workout-session-active .set-rest-bar[hidden] {
+/* Keep progress chrome height stable if briefly hidden; do not reserve the
+   between-set rest bar — that left an empty gray gap under "Übung x/y"
+   and pushed the exercise card down while resting was inactive. */
+.workout-session-active .workout-progress[hidden] {
   display: block !important;
   visibility: hidden;
 }
