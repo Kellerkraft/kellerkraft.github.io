@@ -377,6 +377,14 @@ html[data-theme="light"] .offline-banner--training {
   height: 18px;
   accent-color: var(--lime, #cdf94a);
 }
+.meso-opt-chip {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+.meso-opt-chip.active {
+  border-color: var(--lime, #cdf94a);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lime, #cdf94a) 55%, transparent);
+}
 .meso-banner,
 .meso-status-card {
   background: var(--bg-card);

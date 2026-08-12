@@ -1600,20 +1600,17 @@ export function createTrainingModule(ctx = {}) {
       <div class="section-title" style="margin-top:20px">Trainingsziel</div>
       <div class="chip-row" id="goalChips" style="flex-direction:column; gap:8px; display:flex;">
         ${GOAL_ORDER.map((k) => `<button type="button" class="chip goal-chip${selectedGoal === k ? " active" : ""}" data-goal="${k}" style="width:100%; text-align:left; padding:12px 14px;">
-          <strong>${GOAL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${GOAL_DESC[k]}</span>
+          <strong>${GOAL_LABELS[k]}</strong><br><span style="font-size:0.85em; opacity:0.75;">${GOAL_DESC[k]}${k === "muskelaufbau" ? " · optional mit RP-Mesozyklus" : ""}</span>
         </button>`).join("")}
       </div>
 
       <div id="mesoOptInWrap" style="${selectedGoal === "muskelaufbau" ? "" : "display:none"}">
-        <div class="section-title" style="margin-top:20px">Mesozyklus (Hypertrophie)</div>
-        <div class="info-box" style="margin-bottom:10px">
-          Optional für Fortgeschrittene: 5 Wochen Aufbau → Peak → Deload mit Satz- und RIR-Vorgaben.
-          Speichert lokal (offline), ohne Internet.
-        </div>
-        <label class="meso-toggle">
-          <input type="checkbox" id="mesoOptInCheck" ${mesoOptIn ? "checked" : ""}>
-          <span>Mesozyklus nutzen</span>
-        </label>
+        <div class="section-title" style="margin-top:20px">RP Hypertrophie-Plan</div>
+        <button type="button" id="mesoOptInBtn" class="chip meso-opt-chip${mesoOptIn ? " active" : ""}" style="width:100%; text-align:left; padding:14px 16px;">
+          <strong>${mesoOptIn ? "✓ RP-Mesozyklus aktiv" : "RP-Mesozyklus aktivieren"}</strong><br>
+          <span style="font-size:0.85em; opacity:0.75;">5 Wochen Aufbau → Peak → Deload · Satzziele &amp; RIR · auch für eigene Ober-/Unterkörper-Pläne</span>
+        </button>
+        <input type="checkbox" id="mesoOptInCheck" ${mesoOptIn ? "checked" : ""} hidden aria-hidden="true">
         <div id="mesoSetupPanel" style="margin-top:12px;${mesoOptIn ? "" : "display:none"}">
           ${(() => {
             const existing = getActiveMesocycle(writeKey());
@@ -1648,7 +1645,7 @@ export function createTrainingModule(ctx = {}) {
               </div>
               ${selectedLevel && selectedLevel !== "advanced"
                 ? `<div class="sub" style="margin-top:8px;color:#f5c542">Hinweis: Meso ist für Fortgeschrittene gedacht — Level „Fortgeschritten“ empfohlen.</div>`
-                : `<div class="sub" style="margin-top:8px">Die App wählt die Muskelbereiche je Session (Split). Trainingsbereich-Chips werden dann überschrieben.</div>`}
+                : `<div class="sub" style="margin-top:8px">Für AI-Sessions wählt die App den Split. Eigene Ober-/Unterkörper-Workouts behalten deine Übungen und bekommen Soll-Sätze/RIR.</div>`}
             `;
           })()}
         </div>
@@ -1723,18 +1720,13 @@ export function createTrainingModule(ctx = {}) {
         renderTrainingSetup();
       });
     });
+    document.getElementById("mesoOptInBtn")?.addEventListener("click", () => {
+      mesoOptIn = !mesoOptIn;
+      renderTrainingSetup();
+    });
     document.getElementById("mesoOptInCheck")?.addEventListener("change", (e) => {
       mesoOptIn = !!e.target.checked;
-      const panel = document.getElementById("mesoSetupPanel");
-      if (panel) panel.style.display = mesoOptIn ? "" : "none";
-      const startBtn = document.getElementById("startTrainingBtn");
-      if (startBtn) {
-        startBtn.textContent = mesoOptIn && selectedGoal === "muskelaufbau"
-          ? "Meso-Session starten →"
-          : "AI Workout generieren →";
-      }
-      // Refresh custom-workout labels (Mit Meso starten)
-      renderCustomWorkoutsSection();
+      renderTrainingSetup();
     });
     document.querySelectorAll("#mesoFreqChips .chip").forEach((btn) => {
       btn.addEventListener("click", () => {
