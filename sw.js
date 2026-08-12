@@ -1,5 +1,5 @@
 /* Kellerkraft — Service Worker (offline training MVP) */
-const CACHE_VERSION = "kg-offline-v29";
+const CACHE_VERSION = "kg-offline-v30";
 const PRECACHE = [
   "./",
   "./index.html",
