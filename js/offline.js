@@ -43,6 +43,14 @@ export function isOnline() {
   return typeof navigator !== "undefined" ? navigator.onLine !== false : true;
 }
 
+/** Race a promise against a timeout (used for Firebase writes when Wi‑Fi has no internet). */
+export function withTimeout(promise, ms, message = "timeout") {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(message)), ms))
+  ]);
+}
+
 export async function enqueueWrite(item) {
   const db = await openDb();
   const tx = db.transaction(STORE_QUEUE, "readwrite");

@@ -12,7 +12,8 @@ import {
   cacheLastWorkout,
   readCachedLastWorkout,
   syncPendingWrites,
-  pendingCount
+  pendingCount,
+  withTimeout
 } from "./offline.js";
 import {
   BODYMAP_FRONT_VIEWBOX,
@@ -718,6 +719,110 @@ export function createTrainingModule(ctx = {}) {
     ]);
   }
 
+  const REMOTE_WRITE_MS = 3000;
+
+  function firebaseWriteWithTimeout(writeFn, ms = REMOTE_WRITE_MS) {
+    return withTimeout(Promise.resolve().then(writeFn), ms, "write-timeout");
+  }
+
+  async function persistLogEntry(key, exId, entry) {
+    await mergeLogIntoCache(key, exId, entry);
+
+    const queueOffline = async () => {
+      await enqueueWrite({ type: "log", userKey: key, exId, entry });
+      return { queued: true };
+    };
+
+    if (!isOnline()) {
+      return queueOffline();
+    }
+    try {
+      await firebaseWriteWithTimeout(() => push(logRef(key, exId), entry));
+      return { queued: false };
+    } catch (err) {
+      return queueOffline().then((r) => ({ ...r, error: err }));
+    }
+  }
+
+  async function persistLastWorkout(key, data) {
+    await cacheLastWorkout(key, data);
+
+    const queueOffline = async () => {
+      await enqueueWrite({ type: "lastWorkout", userKey: key, data });
+      return { queued: true };
+    };
+
+    if (!isOnline()) {
+      return queueOffline();
+    }
+    try {
+      await firebaseWriteWithTimeout(() => set(lastWorkoutRef(key), data));
+      return { queued: false };
+    } catch (err) {
+      return queueOffline().then((r) => ({ ...r, error: err }));
+    }
+  }
+
+  async function flushOfflineQueue() {
+    return syncPendingWrites({
+      writeLog: async (userKey, exId, entry) => {
+        await firebaseWriteWithTimeout(() => push(logRef(userKey, exId), entry));
+      },
+      writeLastWorkout: async (userKey, data) => {
+        await firebaseWriteWithTimeout(() => set(lastWorkoutRef(userKey), data));
+        await cacheLastWorkout(userKey, data);
+      }
+    });
+  }
+
+  async function saveExerciseLogWithFallback(key, exId, logEntry, { avgWeight, avgReps, setCount }) {
+    try {
+      const result = await persistLogEntry(key, exId, logEntry);
+      if (result.queued) {
+        showToast(`Offline gespeichert (${setCount} Sätze) — sync später.`, "info", 2800);
+      } else {
+        showToast(`Übung gespeichert (${setCount} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
+      }
+      return true;
+    } catch (err) {
+      console.error("Speichern fehlgeschlagen (voller Eintrag):", err, logEntry);
+      const { sets, ...fallbackEntry } = logEntry;
+      try {
+        const result = await persistLogEntry(key, exId, fallbackEntry);
+        if (result.queued) {
+          showToast("Offline gespeichert (ohne Satz-Details) — sync später.", "info", 3500);
+        } else {
+          showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
+        }
+        return true;
+      } catch (err2) {
+        console.error("Speichern fehlgeschlagen (Fallback ohne sets):", err2, fallbackEntry);
+        showToast("Speichern fehlgeschlagen – Training läuft weiter, bitte später erneut versuchen.", "error", 5000);
+        return false;
+      }
+    }
+  }
+
+  function persistExerciseCompletionInBackground({
+    key,
+    exId,
+    logEntry,
+    avgWeight,
+    avgReps,
+    setCount,
+    progressExerciseIds,
+    finalExerciseIds
+  }) {
+    void (async () => {
+      await saveExerciseLogWithFallback(key, exId, logEntry, { avgWeight, avgReps, setCount });
+      await saveLastWorkout(key, progressExerciseIds, { silent: true });
+      if (finalExerciseIds) {
+        await saveLastWorkout(key, finalExerciseIds, { silent: true });
+      }
+      void refreshLastWorkoutBox();
+    })();
+  }
+
   async function loadLogTree(key) {
     if (!key) return {};
     if (!isOnline()) {
@@ -733,62 +838,6 @@ export function createTrainingModule(ctx = {}) {
       const cached = await readCachedLogTree(key);
       return cached || {};
     }
-  }
-
-  async function persistLogEntry(key, exId, entry) {
-    const tryRemote = async () => {
-      await push(logRef(key, exId), entry);
-      try {
-        const tree = await loadLogTree(key);
-        // loadLogTree already caches; ensure entry present if race
-        if (!tree[exId]) {
-          await mergeLogIntoCache(key, exId, entry);
-        }
-      } catch { /* ignore */ }
-    };
-
-    if (!isOnline()) {
-      await enqueueWrite({ type: "log", userKey: key, exId, entry });
-      await mergeLogIntoCache(key, exId, entry);
-      return { queued: true };
-    }
-    try {
-      await tryRemote();
-      return { queued: false };
-    } catch (err) {
-      await enqueueWrite({ type: "log", userKey: key, exId, entry });
-      await mergeLogIntoCache(key, exId, entry);
-      return { queued: true, error: err };
-    }
-  }
-
-  async function persistLastWorkout(key, data) {
-    if (!isOnline()) {
-      await enqueueWrite({ type: "lastWorkout", userKey: key, data });
-      await cacheLastWorkout(key, data);
-      return { queued: true };
-    }
-    try {
-      await set(lastWorkoutRef(key), data);
-      await cacheLastWorkout(key, data);
-      return { queued: false };
-    } catch (err) {
-      await enqueueWrite({ type: "lastWorkout", userKey: key, data });
-      await cacheLastWorkout(key, data);
-      return { queued: true, error: err };
-    }
-  }
-
-  async function flushOfflineQueue() {
-    return syncPendingWrites({
-      writeLog: async (userKey, exId, entry) => {
-        await push(logRef(userKey, exId), entry);
-      },
-      writeLastWorkout: async (userKey, data) => {
-        await set(lastWorkoutRef(userKey), data);
-        await cacheLastWorkout(userKey, data);
-      }
-    });
   }
 
   /**
@@ -889,7 +938,7 @@ export function createTrainingModule(ctx = {}) {
     }
   }
 
-  async function saveLastWorkout(key, exerciseIds) {
+  async function saveLastWorkout(key, exerciseIds, { silent = false } = {}) {
     const data = {
       date: Date.now(),
       duration: selectedDuration,
@@ -898,9 +947,10 @@ export function createTrainingModule(ctx = {}) {
       exerciseIds
     };
     const result = await persistLastWorkout(key, data);
-    if (result.queued) {
+    if (result.queued && !silent) {
       showToast("Offline gespeichert — sync wenn wieder online.", "info", 2800);
     }
+    return result;
   }
 
   async function getLastWorkout(key) {
@@ -1914,7 +1964,7 @@ export function createTrainingModule(ctx = {}) {
       clearActiveSession();
       if (!growthMvpInitialized && trainingUser) {
         updateGrowthMvpInitialized(true);
-        await recordWorkoutCompletion(trainingUser, finishedCount);
+        void recordWorkoutCompletion(trainingUser, finishedCount);
       }
       wrap.innerHTML = renderWorkoutCompleteSummary({
         finishedCount,
@@ -1941,19 +1991,25 @@ export function createTrainingModule(ctx = {}) {
         <button id="doneExBtn" class="btn-main btn-lime" style="margin-top:8px">Cardio erledigt →</button>
         <button id="skipExBtn" class="btn-main btn-dark" style="margin-top:8px">Überspringen</button>
       </div>`;
-      document.getElementById("doneExBtn").addEventListener("click", async () => {
+      document.getElementById("doneExBtn").addEventListener("click", () => {
         const key = writeKey();
         showToast(`${ex.name} erledigt.`, "success", 2000);
-        if (key) await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
+        const wasLast = currentExerciseIdx + 1 >= currentWorkoutQueue.length;
         currentExerciseIdx++;
         currentSets = [];
         pendingRestoredSets = null;
+        stopSetRestTimer();
         saveActiveSession();
-        if (currentExerciseIdx >= currentWorkoutQueue.length) {
-          if (key) await saveLastWorkout(key, strengthIdsFromQueue());
+        if (wasLast) {
           renderTrainingExercise();
         } else {
           renderRestTimer();
+        }
+        if (key) {
+          void saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx)), { silent: true });
+          if (wasLast) {
+            void saveLastWorkout(key, strengthIdsFromQueue(), { silent: true });
+          }
         }
       });
       document.getElementById("skipExBtn").addEventListener("click", () => {
@@ -2080,7 +2136,7 @@ export function createTrainingModule(ctx = {}) {
     });
 
     // Buttons sofort aktivieren, nicht erst nach der Firebase-Abfrage des letzten Logs
-    document.getElementById("doneExBtn").addEventListener("click", async () => {
+    document.getElementById("doneExBtn").addEventListener("click", () => {
       // Falls im letzten Feld noch ein Satz steht, der nicht per "+ Satz hinzufügen" gespeichert wurde, automatisch übernehmen
       const pendingWeight = parseFloat(document.getElementById("logWeight").value) || 0;
       const pendingReps = parseInt(document.getElementById("logReps").value) || 0;
@@ -2095,13 +2151,12 @@ export function createTrainingModule(ctx = {}) {
         showToast("Bitte mindestens einen Satz eingeben.", "error", 2200);
         return;
       }
-      // Durchschnitt aus allen Sätzen für die Grafik/Übersicht
       const avgWeight = Math.round((currentSets.reduce((sum, s) => sum + s.weight, 0) / currentSets.length) * 10) / 10;
       const avgReps = Math.round(currentSets.reduce((sum, s) => sum + s.reps, 0) / currentSets.length);
       const minReps = parseInt(document.getElementById("logMin").value) || ex.defMin;
       const maxReps = parseInt(document.getElementById("logMax").value) || ex.defMax;
-      // RIR des letzten protokollierten Satzes – relevant für die nächste Gewichtsempfehlung
       const lastSetRir = currentSets[currentSets.length - 1]?.rir;
+      const setCount = currentSets.length;
       const logEntry = {
         weight: avgWeight,
         reps: avgReps,
@@ -2127,44 +2182,34 @@ export function createTrainingModule(ctx = {}) {
         showToast("Bitte zuerst deinen Anzeigenamen im Profil setzen.", "error", 3000);
         return;
       }
-      try {
-        const result = await persistLogEntry(key, ex.id, logEntry);
-        if (result.queued) {
-          showToast(`Offline gespeichert (${currentSets.length} Sätze) — sync später.`, "info", 2800);
-        } else {
-          showToast(`Übung gespeichert (${currentSets.length} Sätze, Ø ${avgWeight} kg × ${avgReps} Wdh.).`, "success", 2200);
-        }
-      } catch (err) {
-        console.error("Speichern fehlgeschlagen (voller Eintrag):", err, logEntry);
-        const { sets, ...fallbackEntry } = logEntry;
-        try {
-          const result = await persistLogEntry(key, ex.id, fallbackEntry);
-          if (result.queued) {
-            showToast("Offline gespeichert (ohne Satz-Details) — sync später.", "info", 3500);
-          } else {
-            showToast(`Übung gespeichert (Ø ${avgWeight} kg × ${avgReps} Wdh. – Satz-Details konnten wegen Datenbank-Einschränkung nicht gespeichert werden).`, "info", 4500);
-          }
-        } catch (err2) {
-          console.error("Speichern fehlgeschlagen (Fallback ohne sets):", err2, fallbackEntry);
-          showToast("Speichern fehlgeschlagen: " + (err2 && err2.message ? err2.message : "Unbekannter Fehler") + ". Bitte Datenbank-Regeln in der Firebase-Konsole prüfen.", "error", 5000);
-          return;
-        }
-      }
+
       completedBodies.add(ex.body);
       sessionVolumeKg += setsVolumeKg(currentSets);
-      sessionSetCount += currentSets.length;
-      await saveLastWorkout(key, strengthIdsFromQueue(currentWorkoutQueue.slice(0, currentExerciseIdx + 1)));
-      currentExerciseIdx++;
+      sessionSetCount += setCount;
+      const wasLastExercise = currentExerciseIdx + 1 >= currentWorkoutQueue.length;
+      const nextIdx = currentExerciseIdx + 1;
+      currentExerciseIdx = nextIdx;
       currentSets = [];
       pendingRestoredSets = null;
+      stopSetRestTimer();
       saveActiveSession();
-      if (currentExerciseIdx >= currentWorkoutQueue.length) {
-        await saveLastWorkout(key, strengthIdsFromQueue());
+
+      if (wasLastExercise) {
         renderTrainingExercise();
       } else {
-        await refreshLastWorkoutBox();
         renderRestTimer();
       }
+
+      persistExerciseCompletionInBackground({
+        key,
+        exId: ex.id,
+        logEntry,
+        avgWeight,
+        avgReps,
+        setCount,
+        progressExerciseIds: strengthIdsFromQueue(currentWorkoutQueue.slice(0, nextIdx)),
+        finalExerciseIds: wasLastExercise ? strengthIdsFromQueue() : null
+      });
     });
     document.getElementById("skipExBtn").addEventListener("click", () => {
       currentExerciseIdx++;
@@ -2174,17 +2219,27 @@ export function createTrainingModule(ctx = {}) {
       renderTrainingExercise();
     });
 
-    const last = await getLastLog(readKey() || writeKey(), ex.id);
-    const reco = computeRecommendation(last, ex);
-    document.getElementById("recoNote").innerHTML = reco.note + (reco.weight ? `<br><strong style="color:#cdf94a">Empfehlung: ${reco.weight} kg × ${reco.reps} Wdh.</strong>` : `<br><strong style="color:#cdf94a">Empfehlung: ${reco.reps} Wdh. (Gewicht selbst wählen)</strong>`);
-    document.getElementById("logWeight").value = reco.weight || "";
-    document.getElementById("logReps").value = reco.reps || "";
-    document.getElementById("logMin").value = (last && last.minReps) || "";
-    document.getElementById("logMax").value = (last && last.maxReps) || "";
-    if (ex.rackSetting) {
-      const rackInput = document.getElementById("logRackSetting");
-      if (rackInput) rackInput.value = (last && last.rackSetting != null) ? last.rackSetting : "";
-    }
+    void getLastLog(readKey() || writeKey(), ex.id).then((last) => {
+      const recoEl = document.getElementById("recoNote");
+      if (!recoEl) return;
+      const reco = computeRecommendation(last, ex);
+      recoEl.innerHTML = reco.note + (reco.weight ? `<br><strong style="color:#cdf94a">Empfehlung: ${reco.weight} kg × ${reco.reps} Wdh.</strong>` : `<br><strong style="color:#cdf94a">Empfehlung: ${reco.reps} Wdh. (Gewicht selbst wählen)</strong>`);
+      const weightEl = document.getElementById("logWeight");
+      const repsEl = document.getElementById("logReps");
+      const minEl = document.getElementById("logMin");
+      const maxEl = document.getElementById("logMax");
+      if (weightEl) weightEl.value = reco.weight || "";
+      if (repsEl) repsEl.value = reco.reps || "";
+      if (minEl) minEl.value = (last && last.minReps) || "";
+      if (maxEl) maxEl.value = (last && last.maxReps) || "";
+      if (ex.rackSetting) {
+        const rackInput = document.getElementById("logRackSetting");
+        if (rackInput) rackInput.value = (last && last.rackSetting != null) ? last.rackSetting : "";
+      }
+    }).catch(() => {
+      const recoEl = document.getElementById("recoNote");
+      if (recoEl) recoEl.textContent = "Keine Empfehlung verfügbar (offline).";
+    });
   }
 
 
