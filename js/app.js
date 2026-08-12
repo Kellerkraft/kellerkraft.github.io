@@ -39,26 +39,49 @@ const scheduleRef = ref(db, "gym/schedule");
 
 window.addEventListener("offline", () => {
   updateOfflineBanner();
-  showToast("Offline — Training funktioniert lokal, Sync später.", "info", 4500);
+  showToast("Offline — Training läuft lokal, Sync nach dem Workout.", "info", 4500);
 });
 window.addEventListener("online", () => {
   updateOfflineBanner();
+  const inTraining = typeof hasActiveSession === "function" && hasActiveSession();
+  if (inTraining) {
+    showToast("Wieder online — Sync startet nach dem Workout.", "info", 3000);
+    return;
+  }
   showToast("Wieder online — synchronisiere…", "success", 2500);
   flushTrainingOfflineQueue();
 });
 
+const connectivityBanner = { refresh: () => {} };
+
 function updateOfflineBanner() {
   const el = document.getElementById("offlineBanner");
   if (!el) return;
+
+  const inTraining = typeof hasActiveSession === "function" && hasActiveSession();
+
+  if (inTraining) {
+    el.hidden = false;
+    el.classList.add("offline-banner--training");
+    pendingCount().then((n) => {
+      const countText = n > 0 ? ` · ${n} Einträge lokal` : "";
+      el.textContent = `Training läuft lokal${countText} · Sync nach dem Workout`;
+    }).catch(() => {
+      el.textContent = "Training läuft lokal · Sync nach dem Workout";
+    });
+    return;
+  }
+
+  el.classList.remove("offline-banner--training");
   const offline = !isOnline();
   el.hidden = !offline;
   if (offline) {
     pendingCount().then((n) => {
       el.textContent = n > 0
-        ? `Offline-Modus · ${n} Einträge warten auf Sync`
+        ? `Offline · ${n} Einträge warten auf Sync`
         : "Offline-Modus · Training lokal nutzbar";
     }).catch(() => {
-      el.textContent = "Offline-Modus · Training lokal nutzbar";
+      el.textContent = "Offline-Modus";
     });
   }
 }
@@ -155,12 +178,15 @@ const trainingModule = createTrainingModule({
   getIsOwner: () => isOwner,
   recordWorkoutCompletion,
   showToast,
+  refreshConnectivityBanner: () => connectivityBanner.refresh(),
   bodyLabels: BODY_LABELS,
   ...exercisesModule
 });
 
 const { loadCustomExercises, renderUebungenPage } = exercisesModule;
 const { renderTrainingSetup, renderDbOverview, hideWorkoutProgress, setSelectedDuration, hasActiveSession, resumeActiveTraining, saveActiveSession } = trainingModule;
+
+connectivityBanner.refresh = updateOfflineBanner;
 
 const reservations = createReservationsModule({
   getSchedule: () => currentSchedule,
@@ -440,7 +466,9 @@ async function boot() {
 
     await ensureSchemaVersion();
     trackEvent("boot_ready", { online: isOnline() });
-    if (isOnline()) flushTrainingOfflineQueue();
+    if (isOnline() && !(typeof hasActiveSession === "function" && hasActiveSession())) {
+      flushTrainingOfflineQueue();
+    }
   } catch (err) {
     trackError(err, { source: "boot.auth" });
     // Offline / no network: keep UI usable with cached auth if any
