@@ -1407,7 +1407,7 @@ export function createTrainingModule(ctx = {}) {
             <button class="btn-main btn-compact btn-dark delete-custom-workout-btn" data-workoutid="${w.id}" style="margin-top:8px;width:100%">Löschen</button>
           </div>
         </div>
-      `).join("")}</div>` : `<div class="setup-block-hint">Noch keine eigenen Workouts — in Erweitert anlegen.</div>`}
+      `).join("")}</div>` : `<div class="setup-block-hint">Noch keine eigenen Workouts — unter Profil &amp; mehr anlegen.</div>`}
     `;
     wrap.querySelectorAll(".edit-custom-workout-btn").forEach((btn) => {
       btn.addEventListener("click", (e) => {
@@ -1626,12 +1626,12 @@ export function createTrainingModule(ctx = {}) {
 
   async function validateAndStartWorkout({ useMeso }) {
     if (!writeKey()) { alert("Bitte zuerst anmelden."); return false; }
-    if (!trainingUser) { alert("Bitte Anzeigenamen setzen (Profil in Erweitert)."); return false; }
-    if (!selectedLevel) { alert("Bitte ein Erfahrungslevel wählen (Erweitert)."); return false; }
+    if (!trainingUser) { alert("Bitte Anzeigenamen unter Profil & mehr setzen."); return false; }
+    if (!selectedLevel) { alert("Bitte ein Erfahrungslevel wählen."); return false; }
 
     if (useMeso) {
-      if (!mesoOptIn) {
-        alert("Bitte Mesozyklus zuerst aktivieren.");
+      if (!mesoOptIn || !getActiveMesocycle(writeKey())) {
+        alert("Bitte zuerst einen Mesozyklus starten.");
         return false;
       }
       if (selectedLevel === "easy") {
@@ -1639,13 +1639,13 @@ export function createTrainingModule(ctx = {}) {
       }
     } else {
       if (selectedBody.size === 0) {
-        alert("Bitte mindestens einen Trainingsbereich wählen (Erweitert).");
+        alert("Bitte mindestens einen Trainingsbereich wählen.");
         return false;
       }
-      if (!selectedGoal) { alert("Bitte ein Trainingsziel wählen (Erweitert)."); return false; }
-      if (cardioEnabled === null) { alert("Bitte wählen: Cardio dazu — Ja oder Nein (Erweitert)."); return false; }
+      if (!selectedGoal) { alert("Bitte ein Trainingsziel wählen."); return false; }
+      if (cardioEnabled === null) { alert("Bitte wählen: Cardio dazu — Ja oder Nein."); return false; }
       if (cardioEnabled === true && selectedCardio.size === 0) {
-        alert("Bitte mindestens eine Cardio-Möglichkeit wählen (Erweitert).");
+        alert("Bitte mindestens eine Cardio-Möglichkeit wählen.");
         return false;
       }
     }
@@ -1669,6 +1669,283 @@ export function createTrainingModule(ctx = {}) {
     saveActiveSession();
     renderWarmup();
     return true;
+  }
+
+  function renderSetupBackBtnHtml() {
+    return `<button type="button" id="backToTrainingBtn" class="setup-back-btn">← Zurück</button>`;
+  }
+
+  function renderAiSetupFieldsHtml() {
+    return `
+      <div class="section-title" style="margin-top:4px">Dauer</div>
+      <div class="dur-row" id="trainDurRow">
+        ${[15, 30, 45, 60].map((m) => `<button class="btn-dur${m === selectedDuration ? " active" : ""}" data-min="${m}">${m} min</button>`).join("")}
+      </div>
+      <div class="section-title" style="margin-top:16px">Trainingsbereich</div>
+      <div class="chip-row" id="bodyChips">
+        ${Object.entries(BODY_LABELS).map(([k, l]) => `<button class="chip${selectedBody.has(k) ? " active" : ""}" data-body="${k}">${l}</button>`).join("")}
+      </div>
+      <div class="section-title" style="margin-top:16px">Erfahrungslevel</div>
+      <div class="chip-row" id="levelChips">
+        ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}">${LEVEL_LABELS[k]}</button>`).join("")}
+      </div>
+      <div class="section-title" style="margin-top:16px">Trainingsziel</div>
+      <div class="chip-row" id="goalChips">
+        ${GOAL_ORDER.map((k) => `<button type="button" class="chip goal-chip${selectedGoal === k ? " active" : ""}" data-goal="${k}">${GOAL_LABELS[k]}</button>`).join("")}
+      </div>
+      <div class="section-title" style="margin-top:16px">Cardio dazu?</div>
+      <div class="chip-row" id="cardioYesNoRow">
+        <button type="button" class="chip${cardioEnabled === true ? " active" : ""}" data-cardio="yes">Ja</button>
+        <button type="button" class="chip${cardioEnabled === false ? " active" : ""}" data-cardio="no">Nein</button>
+      </div>
+      <div id="cardioOptionsWrap" style="${cardioEnabled === true ? "" : "display:none"}">
+        <div class="sub" style="margin:8px 0 6px">Welche Möglichkeiten? (Mehrfachauswahl)</div>
+        <div class="chip-row" id="cardioModChips">
+          ${CARDIO_OPTIONS.map((c) => `<button type="button" class="chip${selectedCardio.has(c.id) ? " active" : ""}" data-cardioid="${c.id}">${c.label}</button>`).join("")}
+        </div>
+      </div>`;
+  }
+
+  function bindAiSetupFields({ onChange } = {}) {
+    const notify = () => {
+      saveSetupPrefs();
+      onChange?.();
+    };
+    document.querySelectorAll("#trainDurRow .btn-dur").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#trainDurRow .btn-dur").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedDuration = parseInt(btn.dataset.min, 10);
+        notify();
+      });
+    });
+    document.querySelectorAll("#bodyChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const k = btn.dataset.body;
+        if (selectedBody.has(k)) { selectedBody.delete(k); btn.classList.remove("active"); }
+        else { selectedBody.add(k); btn.classList.add("active"); }
+        notify();
+      });
+    });
+    document.querySelectorAll("#levelChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectedLevel = btn.dataset.level;
+        document.querySelectorAll("#levelChips .chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        notify();
+      });
+    });
+    document.querySelectorAll("#goalChips .goal-chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        selectedGoal = btn.dataset.goal;
+        document.querySelectorAll("#goalChips .goal-chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        notify();
+      });
+    });
+    document.querySelectorAll("#cardioYesNoRow .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        cardioEnabled = btn.dataset.cardio === "yes";
+        document.querySelectorAll("#cardioYesNoRow .chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const wrap = document.getElementById("cardioOptionsWrap");
+        if (wrap) wrap.style.display = cardioEnabled ? "" : "none";
+        if (!cardioEnabled) selectedCardio = new Set();
+        notify();
+      });
+    });
+    document.querySelectorAll("#cardioModChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.cardioid;
+        if (selectedCardio.has(id)) {
+          selectedCardio.delete(id);
+          btn.classList.remove("active");
+        } else {
+          selectedCardio.add(id);
+          btn.classList.add("active");
+        }
+        notify();
+      });
+    });
+  }
+
+  function bindMesoSetupFields() {
+    document.querySelectorAll("#mesoFreqChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mesoFrequency = parseInt(btn.dataset.freq, 10);
+        document.querySelectorAll("#mesoFreqChips .chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        saveSetupPrefs();
+      });
+    });
+    document.querySelectorAll("#mesoFocusChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mesoFocus = btn.dataset.focus || MESO_FOCUS_BALANCED;
+        document.querySelectorAll("#mesoFocusChips .chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        saveSetupPrefs();
+      });
+    });
+    document.getElementById("mesoEndBtn")?.addEventListener("click", () => {
+      const uid = writeKey();
+      if (!uid) return;
+      if (!confirm("Aktiven Mesozyklus beenden?")) return;
+      clearMesocycle(uid);
+      mesoOptIn = false;
+      activeMesoRx = null;
+      sessionMesoSetsByBody = {};
+      showToast("Mesozyklus beendet.", "info", 2000);
+      renderMesoSetupPage();
+    });
+    document.getElementById("mesoStartNextFromSetupBtn")?.addEventListener("click", () => {
+      const uid = writeKey();
+      if (!uid) return;
+      const prev = getCompletedMesocycle(uid);
+      startNextMesocycle(uid, prev || { frequency: mesoFrequency, focus: mesoFocus });
+      mesoOptIn = true;
+      saveSetupPrefs();
+      showToast("Neuer Mesozyklus angelegt (+Volumen).", "success", 2500);
+      renderMesoSetupPage();
+    });
+  }
+
+  function activateMesocycleFromSetup() {
+    if (!writeKey()) { alert("Bitte zuerst anmelden."); return false; }
+    if (!trainingUser) { alert("Bitte Anzeigenamen unter Profil setzen."); return false; }
+    if (selectedLevel === "easy") {
+      if (!confirm("Mesozyklus ist für Fortgeschrittene gedacht. Trotzdem starten?")) return false;
+    }
+    const uid = writeKey();
+    const existing = getActiveMesocycle(uid);
+    if (!existing) {
+      saveMesocycle(uid, createMesocycle({ frequency: mesoFrequency, focus: mesoFocus }));
+    }
+    mesoOptIn = true;
+    saveSetupPrefs();
+    showToast("Mesozyklus gestartet.", "success", 2200);
+    return true;
+  }
+
+  function renderAiWorkoutSetupPage() {
+    hideWorkoutProgress();
+    const wrap = document.getElementById("trainingContent");
+    if (!wrap) return;
+    const prefs = loadSetupPrefs();
+    if (prefs) applySetupPrefs(prefs);
+
+    wrap.innerHTML = `
+      ${renderSetupBackBtnHtml()}
+      <div class="setup-subpage-head">
+        <div class="setup-subpage-title">AI Workout generieren</div>
+        <div class="setup-subpage-sub">Dauer, Bereich, Level, Ziel und Cardio wählen</div>
+      </div>
+      ${!trainingUser ? `<div class="info-box setup-block-notice">Anzeigename fehlt — bitte unter <strong>Profil &amp; mehr</strong> setzen.</div>` : ""}
+      <div class="setup-summary" id="aiSetupSummary">${aiSetupSummaryLine()}</div>
+      ${renderAiSetupFieldsHtml()}
+      <button id="confirmAiWorkoutBtn" class="btn-main btn-lime setup-block-cta" style="margin-top:20px">Workout generieren &amp; starten →</button>
+    `;
+
+    document.getElementById("backToTrainingBtn")?.addEventListener("click", renderTrainingSetup);
+    bindAiSetupFields({
+      onChange: () => {
+        updateAiSetupSummary();
+      }
+    });
+    document.getElementById("confirmAiWorkoutBtn")?.addEventListener("click", () => validateAndStartWorkout({ useMeso: false }));
+  }
+
+  function renderMesoSetupPage() {
+    hideWorkoutProgress();
+    const wrap = document.getElementById("trainingContent");
+    if (!wrap) return;
+    const uid = writeKey();
+    const activeMeso = uid ? getActiveMesocycle(uid) : null;
+    if (activeMeso) mesoOptIn = true;
+
+    wrap.innerHTML = `
+      ${renderSetupBackBtnHtml()}
+      <div class="setup-subpage-head">
+        <div class="setup-subpage-title">Mesozyklus</div>
+        <div class="setup-subpage-sub">Strukturierter Hypertrophie-Plan · 5 Wochen Aufbau → Peak → Deload</div>
+      </div>
+      ${!trainingUser ? `<div class="info-box setup-block-notice">Anzeigename fehlt — bitte unter <strong>Profil &amp; mehr</strong> setzen.</div>` : ""}
+      <div id="mesoSetupPanel" style="margin-top:8px">
+        ${renderMesoSetupPanelInnerHtml()}
+      </div>
+      ${activeMeso
+        ? `<div class="setup-block-hint" style="margin-top:14px">Mesozyklus ist aktiv. Gespeicherte Workouts und Schnellstart nutzen automatisch Phasen-Soll (Sätze, RIR).</div>`
+        : `<button id="activateMesoBtn" class="btn-main btn-meso setup-block-cta" style="margin-top:20px">Mesozyklus starten →</button>`}
+    `;
+
+    document.getElementById("backToTrainingBtn")?.addEventListener("click", renderTrainingSetup);
+    bindMesoSetupFields();
+    document.getElementById("activateMesoBtn")?.addEventListener("click", () => {
+      if (activateMesocycleFromSetup()) renderTrainingSetup();
+    });
+  }
+
+  async function renderProfileSetupPage() {
+    hideWorkoutProgress();
+    syncTrainingUser();
+    const wrap = document.getElementById("trainingContent");
+    if (!wrap) return;
+    const { email, isOwner, uid } = account();
+
+    let ownerChipsHTML = "";
+    if (isOwner) {
+      const allUsers = await getAllUsers();
+      ownerChipsHTML = `
+        <div class="section-title">Owner: Profil wählen</div>
+        <div class="chip-row" style="margin-bottom:10px">
+          ${allUsers.map((u) => `<button type="button" class="chip profile-chip${u.key === ownerViewKey ? " active" : ""}" data-key="${u.key}">${u.label}</button>`).join("")}
+        </div>`;
+    }
+
+    wrap.innerHTML = `
+      ${renderSetupBackBtnHtml()}
+      <div class="setup-subpage-head">
+        <div class="setup-subpage-title">Profil &amp; mehr</div>
+        <div class="setup-subpage-sub">Anzeigename, Workouts anlegen, Verlauf</div>
+      </div>
+      ${ownerChipsHTML}
+      <div class="info-box" style="margin-top:8px;margin-bottom:12px">
+        Angemeldet als <strong>${email || "Konto"}</strong><br>
+        Anzeigename: <strong>${trainingUser || "— noch nicht gesetzt —"}</strong>
+      </div>
+      <input id="userNameInput" class="name-input" placeholder="Dein Anzeigename" maxlength="40" value="${trainingUser || ""}">
+      <div class="sub" style="margin:8px 0 10px">Name wird in deinem Profil gespeichert.</div>
+      <div class="section-title" style="margin-top:20px">Eigenes Workout erstellen</div>
+      <button id="createManualWorkoutBtn" class="btn-main btn-dark" style="width:100%">Neues Workout erstellen</button>
+      <div id="manualWorkoutBuilder"></div>
+      <div class="section-title" style="margin-top:20px">Verlauf</div>
+      <div id="lastWorkoutBox"></div>
+      <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
+    `;
+
+    document.getElementById("backToTrainingBtn")?.addEventListener("click", renderTrainingSetup);
+    document.getElementById("userNameInput")?.addEventListener("input", (e) => {
+      updateTrainingUser(e.target.value.trim());
+      refreshLastWorkoutBox();
+      renderCustomWorkoutsSection();
+    });
+    document.getElementById("createManualWorkoutBtn")?.addEventListener("click", () => {
+      manualOrderedExerciseIds = [];
+      renderManualWorkoutBuilder();
+    });
+    document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
+      const key = readKey();
+      if (!key) { alert("Kein Profil geladen."); return; }
+      renderUserHistory(key);
+    });
+    if (isOwner) {
+      document.querySelectorAll(".profile-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          ownerViewKey = btn.dataset.key;
+          renderProfileSetupPage();
+        });
+      });
+    }
+    refreshLastWorkoutBox();
   }
 
   async function renderTrainingSetup() {
@@ -1696,16 +1973,9 @@ export function createTrainingModule(ctx = {}) {
     if (!viewingOther && getActiveMesocycle(uid)) {
       mesoOptIn = true;
     }
-
-    let ownerChipsHTML = "";
-    if (isOwner) {
-      const allUsers = await getAllUsers();
-      ownerChipsHTML = `
-        <div class="section-title">Owner: Profil wählen</div>
-        <div class="chip-row" style="margin-bottom:10px">
-          ${allUsers.map((u) => `<button type="button" class="chip profile-chip${u.key === ownerViewKey ? " active" : ""}" data-key="${u.key}">${u.label}</button>`).join("")}
-        </div>`;
-    }
+    const mesoActive = !!getActiveMesocycle(uid) || mesoOptIn;
+    const prefs = loadSetupPrefs();
+    if (prefs) applySetupPrefs(prefs);
 
     wrap.innerHTML = `
       ${!viewingOther ? `
@@ -1726,7 +1996,6 @@ export function createTrainingModule(ctx = {}) {
             </div>`
           : ""}
         ${(() => {
-          const prefs = loadSetupPrefs();
           if (!prefs || !prefs.level) return "";
           const bodyStr = (prefs.body || []).map((b) => BODY_LABELS[b] || b).join(", ") || "Alle";
           const goalStr = GOAL_LABELS[prefs.goal] || prefs.goal || "";
@@ -1743,9 +2012,7 @@ export function createTrainingModule(ctx = {}) {
             <div class="setup-block-sub">Automatisch generiert · getrennt vom Mesozyklus</div>
           </div>
         </div>
-        ${!trainingUser ? `<div class="info-box setup-block-notice">Anzeigename fehlt — bitte in <strong>Erweitert → Profil</strong> setzen.</div>` : ""}
-        <div class="setup-summary" id="aiSetupSummary">${aiSetupSummaryLine()}</div>
-        <button id="startAiWorkoutBtn" class="btn-main btn-lime setup-block-cta">Jetzt AI Workout starten →</button>
+        <button id="openAiWorkoutBtn" class="btn-main btn-lime setup-block-cta">AI Workout generieren →</button>
       </div>
 
       <div class="setup-path-divider" aria-hidden="true"><span>Eigenes Trainingsprogramm</span></div>
@@ -1754,73 +2021,14 @@ export function createTrainingModule(ctx = {}) {
         <div class="setup-block-head setup-block-head--meso">
           <div>
             <div class="setup-block-title">Mesozyklus</div>
-            <div class="setup-block-sub">Strukturierter Hypertrophie-Plan · 5 Wochen Aufbau → Peak → Deload</div>
+            <div class="setup-block-sub">Hypertrophie-Plan aktivieren oder beenden</div>
           </div>
         </div>
-        ${renderMesoBlockSummaryHtml()}
-        <button type="button" id="mesoOptInBtn" class="chip meso-opt-chip${mesoOptIn ? " active" : ""}">
-          <strong>${mesoOptIn ? "✓ Mesozyklus aktiv" : "Mesozyklus aktivieren"}</strong>
-        </button>
-        <input type="checkbox" id="mesoOptInCheck" ${mesoOptIn ? "checked" : ""} hidden aria-hidden="true">
-        <button id="startMesoWorkoutBtn" class="btn-main btn-meso setup-block-cta"${!mesoOptIn ? " disabled" : ""}>Mesozyklus starten →</button>
-        <button type="button" id="toggleMesoSetupBtn" class="setup-meso-settings-toggle">▸ Mesozyklus-Einstellungen</button>
-        <div id="mesoSetupCollapsible" class="setup-meso-settings-panel">
-          <div id="mesoSetupPanel" style="margin-top:8px">
-            ${renderMesoSetupPanelInnerHtml()}
-          </div>
-        </div>
+        ${mesoActive ? renderMesoBlockSummaryHtml() : `<div class="setup-block-hint">Noch kein Mesozyklus aktiv.</div>`}
+        <button id="openMesoSetupBtn" class="btn-main btn-meso setup-block-cta">${mesoActive ? "Mesozyklus verwalten →" : "Mesozyklus starten →"}</button>
       </div>
 
-      <button type="button" id="toggleAdvancedSetupBtn" class="setup-advanced-toggle">▸ Erweitert (AI Workout)</button>
-      <div id="advancedSetupCollapsible" class="setup-advanced-panel">
-        ${ownerChipsHTML}
-
-        <div class="section-title" style="margin-top:4px">Dauer</div>
-        <div class="dur-row" id="trainDurRow">
-          ${[15, 30, 45, 60].map((m) => `<button class="btn-dur${m === selectedDuration ? " active" : ""}" data-min="${m}">${m} min</button>`).join("")}
-        </div>
-
-        <div class="section-title" style="margin-top:16px">Trainingsbereich</div>
-        <div class="chip-row" id="bodyChips">
-          ${Object.entries(BODY_LABELS).map(([k, l]) => `<button class="chip${selectedBody.has(k) ? " active" : ""}" data-body="${k}">${l}</button>`).join("")}
-        </div>
-
-        <div class="section-title" style="margin-top:16px">Erfahrungslevel</div>
-        <div class="chip-row" id="levelChips">
-          ${LEVEL_ORDER.map((k) => `<button class="chip level-chip${selectedLevel === k ? " active" : ""}" data-level="${k}">${LEVEL_LABELS[k]}</button>`).join("")}
-        </div>
-
-        <div class="section-title" style="margin-top:16px">Trainingsziel</div>
-        <div class="chip-row" id="goalChips">
-          ${GOAL_ORDER.map((k) => `<button type="button" class="chip goal-chip${selectedGoal === k ? " active" : ""}" data-goal="${k}">${GOAL_LABELS[k]}</button>`).join("")}
-        </div>
-
-        <div class="section-title" style="margin-top:16px">Cardio dazu?</div>
-        <div class="chip-row" id="cardioYesNoRow">
-          <button type="button" class="chip${cardioEnabled === true ? " active" : ""}" data-cardio="yes">Ja</button>
-          <button type="button" class="chip${cardioEnabled === false ? " active" : ""}" data-cardio="no">Nein</button>
-        </div>
-        <div id="cardioOptionsWrap" style="${cardioEnabled === true ? "" : "display:none"}">
-          <div class="sub" style="margin:8px 0 6px">Welche Möglichkeiten? (Mehrfachauswahl)</div>
-          <div class="chip-row" id="cardioModChips">
-            ${CARDIO_OPTIONS.map((c) => `<button type="button" class="chip${selectedCardio.has(c.id) ? " active" : ""}" data-cardioid="${c.id}">${c.label}</button>`).join("")}
-          </div>
-        </div>
-
-        <div class="section-title" style="margin-top:20px">Eigenes Workout erstellen</div>
-        <button id="createManualWorkoutBtn" class="btn-main btn-dark" style="width:100%">Neues Workout erstellen</button>
-        <div id="manualWorkoutBuilder"></div>
-
-        <div class="section-title" style="margin-top:20px">Profil &amp; Verlauf</div>
-        <div class="info-box" style="margin-top:8px;margin-bottom:12px">
-          Angemeldet als <strong>${email || "Konto"}</strong><br>
-          Anzeigename: <strong>${trainingUser || "— noch nicht gesetzt —"}</strong>
-        </div>
-        <input id="userNameInput" class="name-input" placeholder="Dein Anzeigename" maxlength="40" value="${trainingUser}">
-        <div class="sub" style="margin:8px 0 10px">Name wird in deinem Profil gespeichert.</div>
-        <div id="lastWorkoutBox"></div>
-        <div style="text-align:center;margin-top:10px"><button id="viewHistoryBtn" class="owner-link">📊 Bisherige Übungen ansehen</button></div>
-      </div>
+      <button type="button" id="openProfileSetupBtn" class="setup-advanced-toggle">Profil &amp; mehr →</button>
       ` : `
       <div class="section-title">${viewingOther ? "Ansicht fremdes Profil" : "Profil"}</div>
       <div class="info-box" style="margin-bottom:12px">
@@ -1833,149 +2041,9 @@ export function createTrainingModule(ctx = {}) {
       <div class="info-box" style="margin-top:16px">Im Owner-Fremdprofil kannst du Historie einsehen/löschen, aber kein Workout für andere starten.</div>`}
     `;
 
-    document.getElementById("toggleAdvancedSetupBtn")?.addEventListener("click", () => {
-      const panel = document.getElementById("advancedSetupCollapsible");
-      const btn = document.getElementById("toggleAdvancedSetupBtn");
-      const isOpen = panel.classList.contains("open");
-      panel.classList.toggle("open", !isOpen);
-      btn.textContent = isOpen ? "▸ Erweitert (AI Workout)" : "▾ Erweitert (AI Workout)";
-    });
-
-    document.getElementById("toggleMesoSetupBtn")?.addEventListener("click", () => {
-      const panel = document.getElementById("mesoSetupCollapsible");
-      const btn = document.getElementById("toggleMesoSetupBtn");
-      const isOpen = panel.classList.contains("open");
-      panel.classList.toggle("open", !isOpen);
-      btn.textContent = isOpen ? "▸ Mesozyklus-Einstellungen" : "▾ Mesozyklus-Einstellungen";
-    });
-
-    if (isOwner) {
-      document.querySelectorAll(".profile-chip").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          ownerViewKey = btn.dataset.key;
-          const label = btn.textContent.trim();
-          if (ownerViewKey === uid) {
-            // keep own display name
-          } else {
-            // don't overwrite own trainingUser permanently when peeking
-          }
-          renderTrainingSetup();
-        });
-      });
-    }
-
-    document.getElementById("userNameInput")?.addEventListener("input", (e) => {
-      updateTrainingUser(e.target.value.trim());
-      refreshLastWorkoutBox();
-      renderCustomWorkoutsSection();
-    });
-    document.querySelectorAll("#trainDurRow .btn-dur").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll("#trainDurRow .btn-dur").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        selectedDuration = parseInt(btn.dataset.min, 10);
-        updateAiSetupSummary();
-      });
-    });
-    document.querySelectorAll("#bodyChips .chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const k = btn.dataset.body;
-        if (selectedBody.has(k)) { selectedBody.delete(k); btn.classList.remove("active"); }
-        else { selectedBody.add(k); btn.classList.add("active"); }
-        updateAiSetupSummary();
-      });
-    });
-    document.querySelectorAll("#levelChips .chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        selectedLevel = btn.dataset.level;
-        document.querySelectorAll("#levelChips .chip").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        updateAiSetupSummary();
-      });
-    });
-    document.querySelectorAll("#goalChips .goal-chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        selectedGoal = btn.dataset.goal;
-        document.querySelectorAll("#goalChips .goal-chip").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        updateAiSetupSummary();
-      });
-    });
-    document.getElementById("mesoOptInBtn")?.addEventListener("click", () => {
-      mesoOptIn = !mesoOptIn;
-      renderTrainingSetup();
-    });
-    document.getElementById("mesoOptInCheck")?.addEventListener("change", (e) => {
-      mesoOptIn = !!e.target.checked;
-      renderTrainingSetup();
-    });
-    document.querySelectorAll("#mesoFreqChips .chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        mesoFrequency = parseInt(btn.dataset.freq, 10);
-        document.querySelectorAll("#mesoFreqChips .chip").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-      });
-    });
-    document.querySelectorAll("#mesoFocusChips .chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        mesoFocus = btn.dataset.focus || MESO_FOCUS_BALANCED;
-        document.querySelectorAll("#mesoFocusChips .chip").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-      });
-    });
-    document.getElementById("mesoEndBtn")?.addEventListener("click", () => {
-      const uid = writeKey();
-      if (!uid) return;
-      if (!confirm("Aktiven Mesozyklus beenden?")) return;
-      clearMesocycle(uid);
-      mesoOptIn = false;
-      activeMesoRx = null;
-      sessionMesoSetsByBody = {};
-      showToast("Mesozyklus beendet.", "info", 2000);
-      renderTrainingSetup();
-    });
-    document.getElementById("mesoStartNextFromSetupBtn")?.addEventListener("click", () => {
-      const uid = writeKey();
-      if (!uid) return;
-      const prev = getCompletedMesocycle(uid);
-      startNextMesocycle(uid, prev || { frequency: mesoFrequency, focus: mesoFocus });
-      mesoOptIn = true;
-      showToast("Neuer Mesozyklus angelegt (+Volumen).", "success", 2500);
-      renderTrainingSetup();
-    });
-    document.querySelectorAll("#cardioYesNoRow .chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        cardioEnabled = btn.dataset.cardio === "yes";
-        document.querySelectorAll("#cardioYesNoRow .chip").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        const wrap = document.getElementById("cardioOptionsWrap");
-        if (wrap) wrap.style.display = cardioEnabled ? "" : "none";
-        if (!cardioEnabled) selectedCardio = new Set();
-        updateAiSetupSummary();
-      });
-    });
-    document.querySelectorAll("#cardioModChips .chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const id = btn.dataset.cardioid;
-        if (selectedCardio.has(id)) {
-          selectedCardio.delete(id);
-          btn.classList.remove("active");
-        } else {
-          selectedCardio.add(id);
-          btn.classList.add("active");
-        }
-        updateAiSetupSummary();
-      });
-    });
-    document.getElementById("startAiWorkoutBtn")?.addEventListener("click", () => validateAndStartWorkout({ useMeso: false }));
-    document.getElementById("startMesoWorkoutBtn")?.addEventListener("click", () => validateAndStartWorkout({ useMeso: true }));
-    document.getElementById("createManualWorkoutBtn")?.addEventListener("click", () => {
-      manualOrderedExerciseIds = [];
-      renderManualWorkoutBuilder();
-      document.getElementById("advancedSetupCollapsible")?.classList.add("open");
-      const advBtn = document.getElementById("toggleAdvancedSetupBtn");
-      if (advBtn) advBtn.textContent = "▾ Erweitert (AI Workout)";
-    });
+    document.getElementById("openAiWorkoutBtn")?.addEventListener("click", renderAiWorkoutSetupPage);
+    document.getElementById("openMesoSetupBtn")?.addEventListener("click", renderMesoSetupPage);
+    document.getElementById("openProfileSetupBtn")?.addEventListener("click", renderProfileSetupPage);
     document.getElementById("resumeTrainingBtn")?.addEventListener("click", async () => {
       if (!resumeActiveTraining()) {
         showToast("Kein gespeichertes Training gefunden.", "error", 2500);
@@ -1990,19 +2058,20 @@ export function createTrainingModule(ctx = {}) {
       renderTrainingSetup();
     });
     document.getElementById("quickStartBtn")?.addEventListener("click", async () => {
-      const prefs = loadSetupPrefs();
-      if (!prefs) return;
-      applySetupPrefs(prefs);
-      updateAiSetupSummary();
-      const useMeso = mesoOptIn;
-      await validateAndStartWorkout({ useMeso });
+      const savedPrefs = loadSetupPrefs();
+      if (!savedPrefs) return;
+      applySetupPrefs(savedPrefs);
+      if (mesoOptIn && getActiveMesocycle(writeKey())) {
+        await validateAndStartWorkout({ useMeso: true });
+      } else {
+        await validateAndStartWorkout({ useMeso: false });
+      }
     });
     document.getElementById("viewHistoryBtn")?.addEventListener("click", () => {
       const key = readKey();
       if (!key) { alert("Kein Profil geladen."); return; }
       renderUserHistory(key);
     });
-    refreshLastWorkoutBox();
     if (!viewingOther) renderCustomWorkoutsSection();
   }
 

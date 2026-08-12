@@ -1134,6 +1134,36 @@ html[data-theme="light"] .sets-list-compact .set-chip strong { color: var(--acce
 .setup-advanced-panel.open {
   display: block;
 }
+.setup-back-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 0 0 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.setup-back-btn:active { opacity: 0.75; }
+.setup-subpage-head {
+  margin-bottom: 16px;
+}
+.setup-subpage-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+.setup-subpage-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+#openProfileSetupBtn.setup-advanced-toggle {
+  text-align: center;
+}
 .setup-saved-list {
   display: flex;
   flex-direction: column;
