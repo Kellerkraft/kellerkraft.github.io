@@ -979,35 +979,131 @@ html[data-theme="light"] .sets-list-compact .set-chip strong { color: var(--acce
   line-height: 1.5;
 }
 
-/* ── Training setup clarity ── */
-.setup-headline-card {
+/* ── Training setup: 3-block app layout ── */
+.setup-block-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 12px 14px;
+  padding: 14px;
   margin-bottom: 12px;
 }
-.setup-headline-kicker {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-  font-weight: 600;
+.setup-block-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
 }
-.setup-headline-title {
-  margin-top: 4px;
+.setup-block-num {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-input));
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.setup-block-title {
   font-size: 16px;
-  color: var(--text);
   font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
 }
-#customWorkoutsSection .info-box {
-  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+.setup-block-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
 }
-#customWorkoutsSection .btn-main.btn-lime {
+.setup-block-hint,
+.setup-saved-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+.setup-block-notice {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+.setup-summary {
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+.setup-block-cta {
+  width: 100%;
   font-family: inherit;
   font-size: 15px;
   letter-spacing: 0.01em;
   font-weight: 600;
+}
+.setup-advanced-toggle {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.setup-advanced-panel {
+  display: none;
+  padding: 4px 2px 16px;
+}
+.setup-advanced-panel.open {
+  display: block;
+}
+.setup-saved-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.setup-saved-card {
+  background: var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.setup-saved-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.setup-saved-head .sub {
+  margin: 0;
+  opacity: 0.85;
+  font-size: 12px;
+}
+.setup-saved-actions {
+  display: flex;
+  gap: 8px;
+}
+.setup-saved-actions .btn-main {
+  flex: 1;
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  font-weight: 600;
+}
+#customWorkoutsSection .custom-workout-edit-panel {
+  margin-top: 10px;
 }
 
 .owner-panel { background: var(--owner-bg); border: 1px solid var(--owner-border); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); min-width: 0; max-width: 100%; }
