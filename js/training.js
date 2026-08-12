@@ -1570,6 +1570,7 @@ export function createTrainingModule(ctx = {}) {
       <div class="section-title" style="margin-top:24px">AI Workout Generator</div>
       <div class="info-box" style="margin-bottom:14px">
         Erstellt ein <strong>AI-optimiertes Workout</strong> je nach Trainingsbereich, Dauer und Erfahrungslevel.
+        Alle Workouts (AI, eigene Pläne, Meso) speichern Sätze lokal — auch ohne Internet; Sync später.
       </div>
       ${hasActiveSession()
         ? `<div class="info-box resume-session-card" style="margin-bottom:14px">
