@@ -1,4 +1,4 @@
-# Keller Gym
+# Kellerkraft
 
 Single-Page-Trainings-App (PWA) fuer das Home-Gym im Keller, mit Firebase Realtime Database + Auth als Backend.
 
