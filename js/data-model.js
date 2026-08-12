@@ -169,7 +169,8 @@ export function buildUserProfile(partial = {}) {
 }
 
 /**
- * Build a v2 plan object.
+ * Build a v2 plan object (weekly note plan).
+ * Mesocycles use js/mesocycle.js (local-first) in v1 of hypertrophy periodization.
  * @param {object} partial
  */
 export function buildPlan(partial = {}) {

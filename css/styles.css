@@ -361,6 +361,98 @@ html[data-theme="light"] .offline-banner--training {
   color: var(--text-muted);
 }
 .workout-sync-card .btn-main { margin-top: 0; }
+
+.meso-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.meso-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--lime, #cdf94a);
+}
+.meso-banner,
+.meso-status-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--lime, #cdf94a);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.meso-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}
+.meso-banner-sub,
+.meso-status-card .sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.meso-banner-sub strong {
+  color: var(--lime, #cdf94a);
+  font-weight: 600;
+}
+.meso-volume {
+  margin-top: 10px;
+}
+.meso-vol-row {
+  margin-bottom: 8px;
+}
+.meso-vol-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+.meso-vol-label span {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.meso-vol-track {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 80%, transparent);
+  overflow: hidden;
+}
+.meso-vol-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--lime, #cdf94a);
+}
+.meso-vol-fill--low { background: color-mix(in srgb, var(--text-dim) 70%, transparent); }
+.meso-vol-fill--ok { background: color-mix(in srgb, #f5c542 80%, var(--lime, #cdf94a)); }
+.meso-vol-fill--hit { background: var(--lime, #cdf94a); }
+.meso-advice {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card) 92%, var(--lime, #cdf94a));
+}
+.meso-advice--deload,
+.meso-advice--upcoming {
+  border-color: color-mix(in srgb, #f5c542 45%, var(--border));
+  background: color-mix(in srgb, var(--bg-card) 88%, #f5c542);
+}
+.meso-advice--caution {
+  border-color: color-mix(in srgb, #f55 35%, var(--border));
+  background: color-mix(in srgb, var(--bg-card) 90%, #f55);
+}
+
 .workout-stat-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

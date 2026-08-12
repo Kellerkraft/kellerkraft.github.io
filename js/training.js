@@ -16,6 +16,24 @@ import {
   withTimeout
 } from "./offline.js";
 import {
+  MESO_FREQUENCIES,
+  MESO_FOCUS_BALANCED,
+  MESO_DURATION_WEEKS,
+  createMesocycle,
+  getActiveMesocycle,
+  getCompletedMesocycle,
+  getSessionPrescription,
+  getDeloadAdvice,
+  saveMesocycle,
+  clearMesocycle,
+  recordMesocycleSession,
+  startNextMesocycle,
+  applyPhaseLoad,
+  focusLabel as mesoFocusLabel,
+  renderVolumeBarsHtml,
+  renderAdviceHtml
+} from "./mesocycle.js";
+import {
   BODYMAP_FRONT_VIEWBOX,
   BODYMAP_BACK_VIEWBOX,
   BODYMAP_FRONT_MUSCLES,
@@ -152,13 +170,36 @@ export function createTrainingModule(ctx = {}) {
     return n.toLocaleString("de-DE");
   }
 
-  function renderWorkoutCompleteSummary({ finishedCount, bodyList, volumeKg, setCount }) {
+  function renderWorkoutCompleteSummary({ finishedCount, bodyList, volumeKg, setCount, mesoProgress = null }) {
     const regions = bodyList.map((b) => BODY_LABELS[b] || b);
     const regionChips = regions.length
       ? `<div class="workout-body-chips">${regions.map((label) =>
           `<span class="workout-body-chip">${label}</span>`
         ).join("")}</div>`
       : `<div class="sub" style="margin-top:10px">Keine Muskelgruppe erfasst.</div>`;
+
+    let mesoHtml = "";
+    if (mesoProgress?.completedMeso) {
+      mesoHtml = `
+        <div class="meso-status-card" style="margin-top:14px">
+          <div class="meso-banner-title">Mesozyklus geschafft</div>
+          <div class="sub" style="margin-top:4px">Deload abgeschlossen. Nächster Zyklus startet mit etwas mehr Wochenvolumen.</div>
+          <button type="button" id="mesoStartNextBtn" class="btn-main btn-lime" style="margin-top:10px">Neuen Meso starten →</button>
+        </div>`;
+    } else if (mesoProgress?.meso?.status === "active") {
+      const rx = getSessionPrescription(mesoProgress.meso);
+      const advanceNote = mesoProgress.advancedWeek
+        ? ` Neue Woche: ${rx?.label || ""}.`
+        : "";
+      const advice = mesoProgress.advancedWeek ? getDeloadAdvice(mesoProgress.meso) : (rx?.advice || null);
+      mesoHtml = `
+        <div class="meso-status-card" style="margin-top:14px">
+          <div class="meso-banner-title">Meso-Fortschritt</div>
+          <div class="sub" style="margin-top:4px">${rx?.statusLine || ""}${advanceNote}</div>
+          ${renderVolumeBarsHtml(mesoProgress.volumeReport || rx?.volumeReport)}
+          ${renderAdviceHtml(advice)}
+        </div>`;
+    }
 
     return `
       <div class="workout-complete">
@@ -170,6 +211,8 @@ export function createTrainingModule(ctx = {}) {
           <div class="workout-sync-title">Speichern</div>
           <p>Prüfe Sync-Status…</p>
         </div>
+
+        ${mesoHtml}
 
         <div class="workout-tonnage-card">
           <div class="workout-tonnage-label">Bewegte Last</div>
@@ -383,6 +426,14 @@ export function createTrainingModule(ctx = {}) {
   /** null = undecided, true/false after user picks */
   let cardioEnabled = null;
   let selectedCardio = new Set();
+  /** Opt-in for pragmatic hypertrophy mesocycle (only with Muskelaufbau). */
+  let mesoOptIn = false;
+  let mesoFrequency = 4;
+  let mesoFocus = MESO_FOCUS_BALANCED;
+  /** Prescription snapshot for the running session (null = normal AI workout). */
+  let activeMesoRx = null;
+  /** Hard sets per body accumulated in the current meso session. */
+  let sessionMesoSetsByBody = {};
   let currentWorkoutQueue = [];
   let currentExerciseIdx = 0;
   let completedBodies = new Set();
@@ -440,6 +491,11 @@ export function createTrainingModule(ctx = {}) {
         selectedGoal,
         cardioEnabled,
         selectedCardio: [...selectedCardio],
+        mesoOptIn,
+        mesoFrequency,
+        mesoFocus,
+        activeMesoRx,
+        sessionMesoSetsByBody,
         queue: currentWorkoutQueue,
         index: currentExerciseIdx,
         completedBodies: [...completedBodies],
@@ -470,6 +526,8 @@ export function createTrainingModule(ctx = {}) {
     currentSets = [];
     sessionVolumeKg = 0;
     sessionSetCount = 0;
+    activeMesoRx = null;
+    sessionMesoSetsByBody = {};
     refreshConnectivityBanner();
   }
 
@@ -517,6 +575,13 @@ export function createTrainingModule(ctx = {}) {
       if (s.selectedGoal) selectedGoal = s.selectedGoal;
       cardioEnabled = s.cardioEnabled === true ? true : (s.cardioEnabled === false ? false : null);
       selectedCardio = new Set(Array.isArray(s.selectedCardio) ? s.selectedCardio : []);
+      mesoOptIn = !!s.mesoOptIn;
+      if (MESO_FREQUENCIES.includes(Number(s.mesoFrequency))) mesoFrequency = Number(s.mesoFrequency);
+      if (s.mesoFocus) mesoFocus = s.mesoFocus;
+      activeMesoRx = s.activeMesoRx && typeof s.activeMesoRx === "object" ? s.activeMesoRx : null;
+      sessionMesoSetsByBody = (s.sessionMesoSetsByBody && typeof s.sessionMesoSetsByBody === "object")
+        ? { ...s.sessionMesoSetsByBody }
+        : {};
       const restoredSets = Array.isArray(s.currentSets) ? s.currentSets.filter(Boolean) : [];
       currentSets = restoredSets;
       pendingRestoredSets = restoredSets;
@@ -682,6 +747,98 @@ export function createTrainingModule(ctx = {}) {
     }
 
     return appendCardioFinisher(result.slice(0, count));
+  }
+
+  /**
+   * Ensure an active meso exists and load today's prescription into activeMesoRx.
+   * @returns {object|null} prescription or null
+   */
+  function ensureActiveMesoRx() {
+    const uid = writeKey();
+    if (!uid) return null;
+    let meso = getActiveMesocycle(uid);
+    if (!meso) {
+      meso = saveMesocycle(uid, createMesocycle({
+        frequency: mesoFrequency,
+        focus: mesoFocus
+      }));
+    }
+    activeMesoRx = getSessionPrescription(meso);
+    selectedGoal = "muskelaufbau";
+    return activeMesoRx;
+  }
+
+  /** Tag queue exercises with current meso set/RIR/phase targets (keeps exercise order). */
+  function applyMesoTagsToQueue(queue) {
+    if (!activeMesoRx || !Array.isArray(queue)) return queue || [];
+    return queue.map((ex) => {
+      if (!ex || isCardioStep(ex)) return ex;
+      return {
+        ...ex,
+        mesoTargetSets: activeMesoRx.targetSetsPerExercise,
+        mesoTargetRirMin: activeMesoRx.targetRirMin,
+        mesoTargetRirMax: activeMesoRx.targetRirMax,
+        mesoPhase: activeMesoRx.phase,
+        mesoPhaseLabel: activeMesoRx.label,
+        mesoWeek: activeMesoRx.week,
+        mesoGuidance: activeMesoRx.guidance,
+        mesoLoadMult: activeMesoRx.loadMult
+      };
+    });
+  }
+
+  /**
+   * Build today's session from the active (or newly created) hypertrophy meso.
+   * Offline-safe: meso lives in localStorage.
+   */
+  function buildMesocycleSession() {
+    ensureActiveMesoRx();
+    selectedBody = new Set(activeMesoRx.bodies);
+    const queue = buildWorkout();
+    return applyMesoTagsToQueue(queue);
+  }
+
+  /**
+   * Start a custom workout; if Meso is opted-in / active, keep YOUR exercises
+   * but apply phase sets, RIR targets and deload load guidance.
+   */
+  function startCustomWorkoutWithOptionalMeso(exerciseIds) {
+    const queue = (exerciseIds || []).map((id) => findExercise(id)).filter(Boolean);
+    if (!queue.length) return null;
+
+    const uid = writeKey();
+    const wantMeso = mesoOptIn || !!getActiveMesocycle(uid);
+    if (wantMeso) {
+      mesoOptIn = true;
+      ensureActiveMesoRx();
+      sessionMesoSetsByBody = {};
+      return applyMesoTagsToQueue(queue);
+    }
+    activeMesoRx = null;
+    sessionMesoSetsByBody = {};
+    return queue;
+  }
+
+  function mesoBannerHtml(ex = null) {
+    const rx = activeMesoRx || (ex && ex.mesoPhase ? {
+      statusLine: `Woche ${ex.mesoWeek}/${MESO_DURATION_WEEKS} · ${ex.mesoPhaseLabel}`,
+      targetSetsPerExercise: ex.mesoTargetSets,
+      targetRirMin: ex.mesoTargetRirMin,
+      targetRirMax: ex.mesoTargetRirMax,
+      label: ex.mesoPhaseLabel,
+      guidance: ex.mesoGuidance || ""
+    } : null);
+    if (!rx) return "";
+    const sets = ex?.mesoTargetSets ?? rx.targetSetsPerExercise;
+    const rMin = ex?.mesoTargetRirMin ?? rx.targetRirMin;
+    const rMax = ex?.mesoTargetRirMax ?? rx.targetRirMax;
+    const guidance = rx.guidance || activeMesoRx?.guidance || "";
+    return `
+      <div class="meso-banner" role="status">
+        <div class="meso-banner-title">Meso · ${rx.statusLine || rx.label || "Hypertrophie"}</div>
+        <div class="meso-banner-sub">Soll: <strong>${sets}</strong> Arbeitssätze · Ziel-RIR <strong>${rMin}–${rMax}</strong>${rx.loadMult && rx.loadMult < 1 ? ` · Last ~<strong>${Math.round(rx.loadMult * 100)} %</strong>` : ""}</div>
+        ${guidance ? `<div class="sub" style="margin-top:6px">${guidance}</div>` : ""}
+      </div>`;
   }
 
   function exerciseSetupHint(ex) {
@@ -1190,8 +1347,15 @@ export function createTrainingModule(ctx = {}) {
       return;
     }
     const saved = await getCustomWorkouts(key);
+    const mesoActive = !!getActiveMesocycle(key) || (mesoOptIn && selectedGoal === "muskelaufbau");
     wrap.innerHTML = `
       <div class="section-title" style="margin-top:24px">Eigene Workouts</div>
+      ${mesoActive
+        ? `<div class="info-box" style="margin-bottom:12px">
+            <strong>Meso aktiv:</strong> Beim Start von Oberkörper/Unterkörper (oder jedem eigenen Plan)
+            bleiben deine Übungen — dazu kommen Phasen-Soll (Sätze, RIR, Deload-Last).
+          </div>`
+        : `<div class="sub" style="margin-bottom:10px">Tipp: Muskelaufbau → „Mesozyklus nutzen“ aktivieren, dann profitieren auch eigene Pläne von RIR-/Satz-Vorgaben.</div>`}
       ${saved.length ? `<div class="faq-wrap" style="margin-bottom:12px">${saved.map(w => `
         <div class="faq-item" data-workoutid="${w.id}">
           <button class="faq-question">${w.name} <span style="opacity:0.6; font-size:0.85em">(${(w.exerciseIds || []).length} Übungen)</span> <span class="faq-chevron">▾</span></button>
@@ -1199,7 +1363,7 @@ export function createTrainingModule(ctx = {}) {
             <div class="sub" style="margin-bottom:6px">Reihenfolge mit ↑↓ anpassen — wird sofort gespeichert.</div>
             ${exerciseOrderListHtml(w.exerciseIds || [], { dataWorkoutId: w.id })}
             <div style="display:flex; gap:10px; margin-top:10px;">
-              <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">▶️ Starten</button>
+              <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">${mesoActive ? "▶️ Mit Meso starten" : "▶️ Starten"}</button>
               <button class="btn-main btn-dark delete-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">🗑️ Löschen</button>
             </div>
           </div></div>
@@ -1235,9 +1399,12 @@ export function createTrainingModule(ctx = {}) {
         e.stopPropagation();
         const w = saved.find(x => x.id === btn.dataset.workoutid);
         if (!w) return;
-        currentWorkoutQueue = (w.exerciseIds || []).map(id => findExercise(id)).filter(Boolean);
-        if (currentWorkoutQueue.length === 0) { alert("Übungen aus diesem Workout nicht mehr verfügbar."); return; }
         await prepareSessionOverrides();
+        currentWorkoutQueue = startCustomWorkoutWithOptionalMeso(w.exerciseIds || []);
+        if (!currentWorkoutQueue || currentWorkoutQueue.length === 0) {
+          alert("Übungen aus diesem Workout nicht mehr verfügbar.");
+          return;
+        }
         currentExerciseIdx = 0;
         completedBodies = new Set();
         currentSets = [];
@@ -1246,6 +1413,9 @@ export function createTrainingModule(ctx = {}) {
         sessionSetCount = 0;
         sessionPhase = "warmup";
         saveActiveSession();
+        if (activeMesoRx) {
+          showToast(`Meso ${activeMesoRx.label}: ${activeMesoRx.targetSetsPerExercise} Sätze, RIR ${activeMesoRx.targetRirMin}–${activeMesoRx.targetRirMax}`, "info", 2800);
+        }
         renderWarmup();
       });
     });
@@ -1305,10 +1475,7 @@ export function createTrainingModule(ctx = {}) {
 
     if (lastSession.rir == null) {
       message = `Letztes Mal ${lastSession.weight} kg × ${lastSession.reps} Wdh. (keine RIR-Angabe) → gleiches Gewicht, versuche 1 Wdh. mehr.`;
-      return { nextWeight, message };
-    }
-
-    if (lastSession.rir >= 3) {
+    } else if (lastSession.rir >= 3) {
       nextWeight += step;
       message = `Letztes Mal war sehr leicht (RIR ${lastSession.rir}). Steigere um ${step} kg!`;
     } else if (lastSession.rir >= 1 && lastSession.reps >= lastSession.targetRepsMax) {
@@ -1321,6 +1488,13 @@ export function createTrainingModule(ctx = {}) {
       message = "Letztes Mal war sehr schwer (Muskelversagen). Ein kleines Stück runtergehen.";
     } else {
       message = `Bleib bei ${nextWeight} kg und versuche 1 Wdh. mehr.`;
+    }
+
+    // Meso deload / phase load steering
+    if (activeMesoRx?.loadMult && activeMesoRx.loadMult < 1) {
+      const phased = applyPhaseLoad(lastSession.weight, activeMesoRx);
+      nextWeight = phased;
+      message = `Deload: ~${Math.round(activeMesoRx.loadMult * 100)} % der letzten Last → ${phased} kg, RIR ${activeMesoRx.targetRirMin}–${activeMesoRx.targetRirMax}.`;
     }
 
     return { nextWeight, message };
@@ -1363,6 +1537,9 @@ export function createTrainingModule(ctx = {}) {
     await loadCustomExercises();
     const activeKey = readKey();
     const viewingOther = isOwner && ownerViewKey && ownerViewKey !== uid;
+    if (!viewingOther && selectedGoal === "muskelaufbau" && getActiveMesocycle(uid)) {
+      mesoOptIn = true;
+    }
 
     let ownerChipsHTML = "";
     if (isOwner) {
@@ -1427,6 +1604,56 @@ export function createTrainingModule(ctx = {}) {
         </button>`).join("")}
       </div>
 
+      <div id="mesoOptInWrap" style="${selectedGoal === "muskelaufbau" ? "" : "display:none"}">
+        <div class="section-title" style="margin-top:20px">Mesozyklus (Hypertrophie)</div>
+        <div class="info-box" style="margin-bottom:10px">
+          Optional für Fortgeschrittene: 5 Wochen Aufbau → Peak → Deload mit Satz- und RIR-Vorgaben.
+          Speichert lokal (offline), ohne Internet.
+        </div>
+        <label class="meso-toggle">
+          <input type="checkbox" id="mesoOptInCheck" ${mesoOptIn ? "checked" : ""}>
+          <span>Mesozyklus nutzen</span>
+        </label>
+        <div id="mesoSetupPanel" style="margin-top:12px;${mesoOptIn ? "" : "display:none"}">
+          ${(() => {
+            const existing = getActiveMesocycle(writeKey());
+            if (existing) {
+              const rx = getSessionPrescription(existing);
+              return `
+                <div class="meso-status-card">
+                  <div class="meso-banner-title">${rx.statusLine}</div>
+                  <div class="sub" style="margin-top:4px">Fokus: ${mesoFocusLabel(existing.focus, BODY_LABELS)} · ${existing.frequency}× / Woche${existing.volumeBonus ? ` · Volumen-Bonus +${existing.volumeBonus}` : ""}</div>
+                  <div class="sub" style="margin-top:4px">Heute: ${(rx.bodies || []).map((b) => BODY_LABELS[b] || b).join(", ")}</div>
+                  ${renderAdviceHtml(rx.advice)}
+                  ${renderVolumeBarsHtml(rx.volumeReport)}
+                  <button type="button" id="mesoEndBtn" class="owner-link" style="margin-top:8px">Meso beenden</button>
+                </div>`;
+            }
+            const completed = getCompletedMesocycle(writeKey());
+            return `
+              ${completed ? `
+                <div class="meso-status-card" style="margin-bottom:10px">
+                  <div class="meso-banner-title">Letzter Meso abgeschlossen</div>
+                  <div class="sub" style="margin-top:4px">Neuer Start übernimmt Frequenz/Fokus und erhöht das Wochenvolumen leicht.</div>
+                  <button type="button" id="mesoStartNextFromSetupBtn" class="btn-main btn-lime" style="margin-top:8px">Neuen Meso anlegen →</button>
+                </div>` : ""}
+              <div class="field-label" style="margin-top:4px">Trainingstage / Woche</div>
+              <div class="chip-row" id="mesoFreqChips">
+                ${MESO_FREQUENCIES.map((n) => `<button type="button" class="chip${mesoFrequency === n ? " active" : ""}" data-freq="${n}">${n}×</button>`).join("")}
+              </div>
+              <div class="field-label" style="margin-top:12px">Fokus</div>
+              <div class="chip-row" id="mesoFocusChips">
+                <button type="button" class="chip${mesoFocus === MESO_FOCUS_BALANCED ? " active" : ""}" data-focus="${MESO_FOCUS_BALANCED}">Ausgeglichen</button>
+                ${Object.entries(BODY_LABELS).map(([k, l]) => `<button type="button" class="chip${mesoFocus === k ? " active" : ""}" data-focus="${k}">${l}</button>`).join("")}
+              </div>
+              ${selectedLevel && selectedLevel !== "advanced"
+                ? `<div class="sub" style="margin-top:8px;color:#f5c542">Hinweis: Meso ist für Fortgeschrittene gedacht — Level „Fortgeschritten“ empfohlen.</div>`
+                : `<div class="sub" style="margin-top:8px">Die App wählt die Muskelbereiche je Session (Split). Trainingsbereich-Chips werden dann überschrieben.</div>`}
+            `;
+          })()}
+        </div>
+      </div>
+
       <div class="section-title" style="margin-top:20px">Cardio dazu?</div>
       <div class="chip-row" id="cardioYesNoRow">
         <button type="button" class="chip${cardioEnabled === true ? " active" : ""}" data-cardio="yes">Ja</button>
@@ -1439,7 +1666,7 @@ export function createTrainingModule(ctx = {}) {
         </div>
       </div>
 
-      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">AI Workout generieren →</button>
+      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:24px">${mesoOptIn && selectedGoal === "muskelaufbau" ? "Meso-Session starten →" : "AI Workout generieren →"}</button>
       <div id="customWorkoutsSection"></div>
       ` : `<div class="info-box" style="margin-top:16px">Im Owner-Fremdprofil kannst du Historie einsehen/löschen, aber kein Workout für andere starten.</div>`}
     `;
@@ -1490,7 +1717,58 @@ export function createTrainingModule(ctx = {}) {
         selectedGoal = btn.dataset.goal;
         document.querySelectorAll("#goalChips .goal-chip").forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
+        if (selectedGoal !== "muskelaufbau") {
+          mesoOptIn = false;
+        }
+        renderTrainingSetup();
       });
+    });
+    document.getElementById("mesoOptInCheck")?.addEventListener("change", (e) => {
+      mesoOptIn = !!e.target.checked;
+      const panel = document.getElementById("mesoSetupPanel");
+      if (panel) panel.style.display = mesoOptIn ? "" : "none";
+      const startBtn = document.getElementById("startTrainingBtn");
+      if (startBtn) {
+        startBtn.textContent = mesoOptIn && selectedGoal === "muskelaufbau"
+          ? "Meso-Session starten →"
+          : "AI Workout generieren →";
+      }
+      // Refresh custom-workout labels (Mit Meso starten)
+      renderCustomWorkoutsSection();
+    });
+    document.querySelectorAll("#mesoFreqChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mesoFrequency = parseInt(btn.dataset.freq, 10);
+        document.querySelectorAll("#mesoFreqChips .chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
+    document.querySelectorAll("#mesoFocusChips .chip").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mesoFocus = btn.dataset.focus || MESO_FOCUS_BALANCED;
+        document.querySelectorAll("#mesoFocusChips .chip").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+      });
+    });
+    document.getElementById("mesoEndBtn")?.addEventListener("click", () => {
+      const uid = writeKey();
+      if (!uid) return;
+      if (!confirm("Aktiven Mesozyklus beenden?")) return;
+      clearMesocycle(uid);
+      mesoOptIn = false;
+      activeMesoRx = null;
+      sessionMesoSetsByBody = {};
+      showToast("Meso beendet.", "info", 2000);
+      renderTrainingSetup();
+    });
+    document.getElementById("mesoStartNextFromSetupBtn")?.addEventListener("click", () => {
+      const uid = writeKey();
+      if (!uid) return;
+      const prev = getCompletedMesocycle(uid);
+      startNextMesocycle(uid, prev || { frequency: mesoFrequency, focus: mesoFocus });
+      mesoOptIn = true;
+      showToast("Neuer Meso angelegt (+Volumen).", "success", 2500);
+      renderTrainingSetup();
     });
     document.querySelectorAll("#cardioYesNoRow .chip").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1517,15 +1795,30 @@ export function createTrainingModule(ctx = {}) {
     document.getElementById("startTrainingBtn")?.addEventListener("click", async () => {
       if (!writeKey()) { alert("Bitte zuerst anmelden."); return; }
       if (!trainingUser) { alert("Bitte Anzeigenamen setzen (Profil)."); return; }
-      if (selectedBody.size === 0 || !selectedLevel) { alert("Bitte mindestens einen Trainingsbereich und ein Erfahrungslevel wählen."); return; }
+      const useMeso = mesoOptIn && selectedGoal === "muskelaufbau";
+      if (!selectedLevel) { alert("Bitte ein Erfahrungslevel wählen."); return; }
+      if (!useMeso && selectedBody.size === 0) {
+        alert("Bitte mindestens einen Trainingsbereich wählen.");
+        return;
+      }
       if (!selectedGoal) { alert("Bitte ein Trainingsziel wählen."); return; }
       if (cardioEnabled === null) { alert("Bitte wählen: Cardio dazu — Ja oder Nein."); return; }
       if (cardioEnabled === true && selectedCardio.size === 0) {
         alert("Bitte mindestens eine Cardio-Möglichkeit wählen.");
         return;
       }
+      if (useMeso && selectedLevel === "easy") {
+        if (!confirm("Meso ist für Fortgeschrittene gedacht. Trotzdem starten?")) return;
+      }
       await prepareSessionOverrides();
-      currentWorkoutQueue = buildWorkout();
+      if (useMeso) {
+        currentWorkoutQueue = buildMesocycleSession();
+        sessionMesoSetsByBody = {};
+      } else {
+        activeMesoRx = null;
+        sessionMesoSetsByBody = {};
+        currentWorkoutQueue = buildWorkout();
+      }
       currentExerciseIdx = 0;
       completedBodies = new Set();
       currentSets = [];
@@ -1906,9 +2199,12 @@ export function createTrainingModule(ctx = {}) {
       ? ` · Cardio-Finisher möglich (${[...selectedCardio].map((id) => CARDIO_OPTIONS.find((c) => c.id === id)?.label || id).join(", ")})`
       : "";
     const strengthCount = strengthIdsFromQueue().length;
+    const mesoNote = activeMesoRx ? mesoBannerHtml() : "";
     wrap.innerHTML = `<div class="section-title">🔥 Aufwärmen (ca. 5 Min.)</div>
+      ${mesoNote}
       <div class="info-box" style="margin-bottom:12px">
         Ziel: <strong>${goalLabel}</strong> · ${strengthCount} Kraft-Übungen${cardioNote}
+        ${activeMesoRx ? `<br><span class="sub">Bereiche heute: ${(activeMesoRx.bodies || []).map((b) => BODY_LABELS[b] || b).join(", ")}</span>` : ""}
       </div>
       <div class="upcoming-wrap">
         <div class="sub" style="color:#999;margin-bottom:10px">Bevor es losgeht, kurz aufwärmen – hier ein paar Beispiele:</div>
@@ -2031,6 +2327,12 @@ export function createTrainingModule(ctx = {}) {
       const bodyList = [...completedBodies];
       const volumeKg = sessionVolumeKg;
       const setCount = sessionSetCount;
+      const wasMesoSession = !!activeMesoRx;
+      const uid = writeKey();
+      let mesoProgress = null;
+      if (wasMesoSession && uid) {
+        mesoProgress = recordMesocycleSession(uid, sessionMesoSetsByBody);
+      }
       currentWorkoutQueue = [];
       currentExerciseIdx = 0;
       clearActiveSession();
@@ -2042,10 +2344,19 @@ export function createTrainingModule(ctx = {}) {
         finishedCount,
         bodyList,
         volumeKg,
-        setCount
+        setCount,
+        mesoProgress
       });
       document.getElementById("restartTrainingBtn")?.addEventListener("click", renderTrainingSetup);
       document.getElementById("backFromCompleteBtn")?.addEventListener("click", renderTrainingSetup);
+      document.getElementById("mesoStartNextBtn")?.addEventListener("click", () => {
+        const id = writeKey();
+        if (!id) return;
+        startNextMesocycle(id, mesoProgress?.meso);
+        mesoOptIn = true;
+        showToast("Neuer Meso gestartet (+Volumen).", "success", 2500);
+        renderTrainingSetup();
+      });
       refreshConnectivityBanner();
       void initWorkoutSyncPanel();
       return;
@@ -2121,17 +2432,18 @@ export function createTrainingModule(ctx = {}) {
         </div>` : "";
     wrap.innerHTML = `<div class="upcoming-wrap"><div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
         <div class="exercise-session-name">${display.name}</div>
+        ${mesoBannerHtml(ex)}
         ${mediaHTML}
         <div class="sub" id="recoNote" style="color:#999;margin-bottom:14px">Lade letzten Wert…</div>
-        <div class="field-label" style="margin-bottom:6px">Sätze</div>
+        <div class="field-label" style="margin-bottom:6px">Sätze${ex.mesoTargetSets ? ` <span style="color:#999;font-weight:400">(Soll: ${ex.mesoTargetSets})</span>` : ""}</div>
         <div id="setsList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
         <div class="time-grid">
           <div><div class="field-label">Gewicht (kg)</div><input type="number" step="0.5" id="logWeight" class="time-input" placeholder="z.B. 10"></div>
           <div><div class="field-label">Wiederholungen</div><input type="number" id="logReps" class="time-input" placeholder="z.B. 10"></div>
         </div>
         <div style="margin-top:10px">
-          <div class="field-label">RIR (Wdh. bis Muskelversagen übrig)</div>
-          <input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="z.B. 2">
+          <div class="field-label">RIR (Wdh. bis Muskelversagen übrig)${ex.mesoTargetRirMin != null ? ` <span style="color:#999;font-weight:400">Ziel ${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax}</span>` : ""}</div>
+          <input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : "z.B. 2"}" value="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : ""}">
         </div>
         <button id="addSetBtn" class="btn-main btn-dark" style="margin-top:8px">+ Satz hinzufügen</button>
         <div class="time-grid" style="margin-top:12px">
@@ -2197,7 +2509,20 @@ export function createTrainingModule(ctx = {}) {
       }
       currentSets.push({ weight, reps, rir });
       renderSetsList();
-      showToast(`Satz ${currentSets.length} hinzugefügt.`, "success", 1200);
+      let toastMsg = `Satz ${currentSets.length} hinzugefügt.`;
+      if (ex.mesoTargetSets) {
+        if (currentSets.length === ex.mesoTargetSets) {
+          toastMsg = `Soll erreicht (${ex.mesoTargetSets} Sätze).`;
+        } else if (currentSets.length > ex.mesoTargetSets) {
+          toastMsg = `Über Soll (${currentSets.length}/${ex.mesoTargetSets}).`;
+        } else {
+          toastMsg = `Satz ${currentSets.length}/${ex.mesoTargetSets}.`;
+        }
+        if (rir != null && (rir < ex.mesoTargetRirMin || rir > ex.mesoTargetRirMax)) {
+          toastMsg += ` RIR-Ziel ${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax}.`;
+        }
+      }
+      showToast(toastMsg, "success", 1600);
       saveActiveSession();
       startSetRestTimer({ setNumber: currentSets.length });
     });
@@ -2260,6 +2585,9 @@ export function createTrainingModule(ctx = {}) {
       completedBodies.add(ex.body);
       sessionVolumeKg += setsVolumeKg(currentSets);
       sessionSetCount += setCount;
+      if (activeMesoRx && ex.body) {
+        sessionMesoSetsByBody[ex.body] = (Number(sessionMesoSetsByBody[ex.body]) || 0) + setCount;
+      }
       const wasLastExercise = currentExerciseIdx + 1 >= currentWorkoutQueue.length;
       const nextIdx = currentExerciseIdx + 1;
       currentExerciseIdx = nextIdx;
