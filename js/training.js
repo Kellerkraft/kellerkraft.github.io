@@ -1388,7 +1388,7 @@ export function createTrainingModule(ctx = {}) {
     const saved = await getCustomWorkouts(key);
     const mesoActive = !!getActiveMesocycle(key) || (mesoOptIn && selectedGoal === "muskelaufbau");
     wrap.innerHTML = `
-      <div class="section-title" style="margin-top:24px">Eigene Workouts</div>
+      <div class="section-title" style="margin-top:8px">Gespeicherte Workouts</div>
       ${mesoActive
         ? `<div class="info-box" style="margin-bottom:12px">
             <strong>Meso aktiv:</strong> Beim Start von Oberkörper/Unterkörper (oder jedem eigenen Plan)
@@ -1396,24 +1396,34 @@ export function createTrainingModule(ctx = {}) {
           </div>`
         : `<div class="sub" style="margin-bottom:10px">Tipp: Muskelaufbau → „Mesozyklus nutzen“ aktivieren, dann profitieren auch eigene Pläne von RIR-/Satz-Vorgaben.</div>`}
       ${saved.length ? `<div class="faq-wrap" style="margin-bottom:12px">${saved.map(w => `
-        <div class="faq-item" data-workoutid="${w.id}">
-          <button class="faq-question">${w.name} <span style="opacity:0.6; font-size:0.85em">(${(w.exerciseIds || []).length} Übungen)</span> <span class="faq-chevron">▾</span></button>
-          <div class="faq-answer"><div class="faq-answer-inner">
+        <div class="info-box" data-workoutid="${w.id}" style="margin-bottom:10px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+            <strong>${w.name}</strong>
+            <span class="sub" style="margin:0;opacity:.85">${(w.exerciseIds || []).length} Übungen</span>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">${mesoActive ? "Mit Meso starten" : "Starten"}</button>
+            <button class="btn-main btn-dark edit-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">Bearbeiten</button>
+          </div>
+          <div class="custom-workout-edit-panel" id="editPanel-${w.id}" style="display:none;margin-top:10px">
             <div class="sub" style="margin-bottom:6px">Reihenfolge mit ↑↓ anpassen — wird sofort gespeichert.</div>
             ${exerciseOrderListHtml(w.exerciseIds || [], { dataWorkoutId: w.id })}
-            <div style="display:flex; gap:10px; margin-top:10px;">
-              <button class="btn-main btn-lime start-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">${mesoActive ? "▶️ Mit Meso starten" : "▶️ Starten"}</button>
-              <button class="btn-main btn-dark delete-custom-workout-btn" data-workoutid="${w.id}" style="flex:1;">🗑️ Löschen</button>
-            </div>
-          </div></div>
+            <button class="btn-main btn-dark delete-custom-workout-btn" data-workoutid="${w.id}" style="margin-top:8px;">Workout löschen</button>
+          </div>
         </div>
       `).join("")}</div>` : `<div class="info-box" style="margin-bottom:12px">Noch keine eigenen Workouts gespeichert.</div>`}
       <button id="createManualWorkoutBtn" class="btn-main btn-dark" style="width:100%">➕ Eigenes Workout erstellen</button>
       <div id="manualWorkoutBuilder"></div>
     `;
-
-    wrap.querySelectorAll(".faq-question").forEach(btn => {
-      btn.addEventListener("click", () => btn.closest(".faq-item").classList.toggle("open"));
+    wrap.querySelectorAll(".edit-custom-workout-btn").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const panel = document.getElementById(`editPanel-${btn.dataset.workoutid}`);
+        if (!panel) return;
+        const isOpen = panel.style.display !== "none";
+        panel.style.display = isOpen ? "none" : "";
+        btn.textContent = isOpen ? "Bearbeiten" : "Fertig";
+      });
     });
     wrap.querySelectorAll(".workout-order-btn").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
@@ -1430,7 +1440,10 @@ export function createTrainingModule(ctx = {}) {
         if (!ok) return;
         w.exerciseIds = nextIds;
         await renderCustomWorkoutsSection();
-        document.querySelector(`.faq-item[data-workoutid="${workoutId}"]`)?.classList.add("open");
+        const panel = document.getElementById(`editPanel-${workoutId}`);
+        if (panel) panel.style.display = "";
+        const toggleBtn = document.querySelector(`.edit-custom-workout-btn[data-workoutid="${workoutId}"]`);
+        if (toggleBtn) toggleBtn.textContent = "Fertig";
       });
     });
     wrap.querySelectorAll(".start-custom-workout-btn").forEach(btn => {
@@ -1614,7 +1627,9 @@ export function createTrainingModule(ctx = {}) {
         return `<button id="quickStartBtn" class="btn-session-primary" style="width:100%;margin-bottom:14px">Wie zuletzt: ${prefs.duration} min · ${bodyStr} · ${goalStr}</button>`;
       })()}
 
-      <div class="section-title">Workout einstellen</div>
+      <div id="customWorkoutsSection"></div>
+
+      <div class="section-title">AI Workout Generator</div>
       ${!trainingUser ? `<div class="info-box" style="margin-bottom:10px;padding:10px 12px;font-size:13px">Anzeigename fehlt — bitte unten unter <strong>Profil</strong> setzen.</div>` : ""}
 
       <div class="section-title" style="margin-top:4px">Dauer</div>
@@ -1638,7 +1653,7 @@ export function createTrainingModule(ctx = {}) {
       </div>
 
       <div id="mesoOptInWrap" style="${selectedGoal === "muskelaufbau" ? "" : "display:none"}">
-        <div class="section-title" style="margin-top:16px">RP Hypertrophie-Plan</div>
+        <div class="section-title" style="margin-top:16px">Mesozyklus (separate Funktion)</div>
         <button type="button" id="mesoOptInBtn" class="chip meso-opt-chip${mesoOptIn ? " active" : ""}" style="width:100%; text-align:left; padding:14px 16px;">
           <strong>${mesoOptIn ? "✓ RP-Mesozyklus aktiv" : "RP-Mesozyklus aktivieren"}</strong><br>
           <span style="font-size:0.85em; opacity:0.75;">5 Wochen Aufbau → Peak → Deload · Satzziele &amp; RIR</span>
@@ -1696,8 +1711,7 @@ export function createTrainingModule(ctx = {}) {
         </div>
       </div>
 
-      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:20px">${mesoOptIn && selectedGoal === "muskelaufbau" ? "Meso-Session starten →" : "Workout starten →"}</button>
-      <div id="customWorkoutsSection"></div>
+      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:20px">${mesoOptIn && selectedGoal === "muskelaufbau" ? "Meso-Session starten →" : "AI Workout starten →"}</button>
 
       <button type="button" id="toggleProfileSetupBtn" class="exercise-details-toggle" style="margin-top:20px;width:100%;text-align:left">▸ Profil &amp; Verlauf</button>
       <div id="profileSetupCollapsible" class="exercise-details-collapsible">
