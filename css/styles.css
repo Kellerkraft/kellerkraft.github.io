@@ -1048,6 +1048,72 @@ html[data-theme="light"] .sets-list-compact .set-chip strong { color: var(--acce
   letter-spacing: 0.01em;
   font-weight: 600;
 }
+.setup-path-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 14px;
+  color: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.setup-path-divider::before,
+.setup-path-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.setup-block--meso {
+  border-color: color-mix(in srgb, #f5c542 38%, var(--border));
+  background: color-mix(in srgb, #f5c542 5%, var(--bg-card));
+  margin-top: 2px;
+}
+.setup-block-head--meso {
+  margin-bottom: 10px;
+}
+.setup-block--meso .meso-opt-chip {
+  width: 100%;
+  text-align: left;
+  padding: 11px 14px;
+  margin-bottom: 10px;
+  border-color: color-mix(in srgb, #f5c542 35%, var(--border));
+  background: var(--bg-elevated);
+}
+.setup-block--meso .meso-opt-chip.active {
+  border-color: #f5c542;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #f5c542 55%, transparent);
+  background: color-mix(in srgb, #f5c542 10%, var(--bg-elevated));
+}
+.btn-main.btn-meso {
+  background: color-mix(in srgb, #f5c542 88%, #fff);
+  border-color: #f5c542;
+  color: #0a0a0a;
+}
+.btn-main.btn-meso:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.setup-meso-settings-toggle {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 10px 2px 0;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.setup-meso-settings-panel {
+  display: none;
+  padding-top: 4px;
+}
+.setup-meso-settings-panel.open {
+  display: block;
+}
 .setup-advanced-toggle {
   width: 100%;
   text-align: left;
@@ -1071,39 +1137,59 @@ html[data-theme="light"] .sets-list-compact .set-chip strong { color: var(--acce
 .setup-saved-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .setup-saved-card {
   background: var(--bg-elevated);
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
-  border-radius: 10px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
 }
-.setup-saved-head {
+.setup-saved-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 10px;
+  min-height: 0;
 }
-.setup-saved-head .sub {
+.setup-saved-meta {
+  min-width: 0;
+  flex: 1;
+}
+.setup-saved-meta strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.setup-saved-meta .sub {
   margin: 0;
-  opacity: 0.85;
-  font-size: 12px;
+  opacity: 0.75;
+  font-size: 11px;
+  line-height: 1.2;
 }
 .setup-saved-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
-.setup-saved-actions .btn-main {
-  flex: 1;
-  font-family: inherit;
-  font-size: 14px;
-  letter-spacing: 0.01em;
+.setup-saved-actions .btn-main.btn-compact {
+  width: auto;
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 #customWorkoutsSection .custom-workout-edit-panel {
-  margin-top: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+#customWorkoutsSection .delete-custom-workout-btn.btn-compact {
+  min-height: 34px;
+  font-size: 12px;
 }
 
 .owner-panel { background: var(--owner-bg); border: 1px solid var(--owner-border); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); min-width: 0; max-width: 100%; }

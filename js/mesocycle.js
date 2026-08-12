@@ -1,5 +1,5 @@
 /**
- * Pragmatic hypertrophy mesocycle (RP-inspired, not Landmark).
+ * Structured hypertrophy mesocycle (offline-first).
  * Offline-first: localStorage per uid.
  *
  * Phase 1: schema, opt-in, start/continue, session
