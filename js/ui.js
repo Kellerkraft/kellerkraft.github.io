@@ -58,6 +58,10 @@ export function applyTheme(theme) {
   if (themeColor) {
     themeColor.setAttribute("content", next === "light" ? "#f5f5f5" : "#0a0a0a");
   }
+  const statusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+  if (statusBar) {
+    statusBar.setAttribute("content", next === "light" ? "default" : "black");
+  }
   localStorage.setItem("kg_theme", next);
 }
 

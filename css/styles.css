@@ -99,7 +99,7 @@ html[data-theme="light"] {
   border-radius: 10px;
   display: block;
   flex-shrink: 0;
-  object-fit: cover;
+  object-fit: contain;
   background: #050505;
   border: 1px solid var(--border-soft);
 }
@@ -111,7 +111,8 @@ html[data-theme="light"] .app-logo {
 .app-wordmark {
   font-family: 'Bebas Neue', sans-serif;
   font-size: 15px; letter-spacing: 0.08em;
-  color: var(--text-muted); line-height: 1;
+  color: var(--text-muted); line-height: 1.15;
+  padding-top: 1px;
 }
 .skeleton-line {
   height: 14px;
@@ -151,15 +152,19 @@ html[data-theme="light"] .app-logo {
   border-bottom: 1px solid #d4a017;
   box-sizing: border-box;
 }
-.offline-banner:not([hidden]) {
-  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+.app-top-chrome {
+  flex-shrink: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding-top: constant(safe-area-inset-top);
+  padding-top: env(safe-area-inset-top, 0px);
 }
-.offline-banner:not([hidden]) ~ .app-header {
-  padding-top: 16px;
+html.ios-safe-fallback .app-top-chrome {
+  padding-top: 47px;
 }
 @media (display-mode: standalone), (display-mode: fullscreen) {
-  .offline-banner:not([hidden]) ~ .app-header {
-    padding-top: 18px;
+  html.ios-safe-fallback .app-top-chrome {
+    padding-top: 54px;
   }
 }
 .offline-banner--training {
@@ -602,22 +607,11 @@ img, video, canvas, svg, iframe { max-width: 100%; }
   flex-shrink: 0;
   background: var(--bg-header);
   border-bottom: 1px solid var(--border);
-  /* constant() for older iOS; env() thereafter — keep air below Dynamic Island */
-  padding-top: calc(16px + constant(safe-area-inset-top, 0px));
-  padding-top: calc(16px + env(safe-area-inset-top, 0px));
-  padding-right: calc(var(--space-3) + env(safe-area-inset-right, 0px));
-  padding-bottom: 14px;
-  padding-left: calc(var(--space-3) + env(safe-area-inset-left, 0px));
+  padding: 14px calc(var(--space-3) + env(safe-area-inset-right, 0px)) 14px calc(var(--space-3) + env(safe-area-inset-left, 0px));
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--space-2);
   width: 100%;
   box-sizing: border-box;
-}
-@media (display-mode: standalone), (display-mode: fullscreen) {
-  .app-header {
-    padding-top: calc(18px + constant(safe-area-inset-top, 0px));
-    padding-top: calc(18px + env(safe-area-inset-top, 0px));
-  }
 }
 .app-header .eyebrow {
   font-size: 11px; letter-spacing: 0.06em;

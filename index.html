@@ -9,7 +9,7 @@
 <link rel="manifest" href="./assets/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Keller Gym">
 <meta name="theme-color" content="#0a0a0a">
 <meta name="format-detection" content="telephone=no">
@@ -20,6 +20,8 @@
       document.documentElement.setAttribute("data-theme", theme);
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#0a0a0a");
+      var statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+      if (statusMeta) statusMeta.setAttribute("content", theme === "light" ? "default" : "black");
     } catch (e) { /* ignore */ }
   })();
 </script>
@@ -39,8 +41,25 @@
 </head>
 <body>
 
+<script>
+  (function () {
+    var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isIOS) return;
+    function probeSafeArea() {
+      var probe = document.createElement("div");
+      probe.style.cssText = "position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);visibility:hidden;pointer-events:none";
+      document.body.appendChild(probe);
+      var inset = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+      probe.remove();
+      if (inset < 8) document.documentElement.classList.add("ios-safe-fallback");
+    }
+    if (document.body) probeSafeArea();
+    else document.addEventListener("DOMContentLoaded", probeSafeArea, { once: true });
+  })();
+</script>
+
+<div class="app-top-chrome">
 <div id="offlineBanner" class="offline-banner" hidden>Offline-Modus</div>
-<div id="toastWrap"></div>
 
 <header class="app-header">
   <div class="app-brand">
@@ -61,6 +80,9 @@
   </div>
   <button id="themeToggleBtn" class="theme-toggle-btn" aria-label="Darstellung umschalten" title="Hell/Dunkel umschalten">🌙</button>
 </header>
+</div>
+
+<div id="toastWrap"></div>
 
 <div id="workoutProgressBar" class="workout-progress" hidden>
   <div class="workout-progress-label" id="workoutProgressLabel">Übung 1 / 6</div>
@@ -244,7 +266,7 @@
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.11</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.12</div>
 
 <nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
   <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">
