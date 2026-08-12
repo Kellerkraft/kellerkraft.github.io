@@ -1388,13 +1388,13 @@ export function createTrainingModule(ctx = {}) {
     const saved = await getCustomWorkouts(key);
     const mesoActive = !!getActiveMesocycle(key) || (mesoOptIn && selectedGoal === "muskelaufbau");
     wrap.innerHTML = `
-      <div class="section-title" style="margin-top:8px">Gespeicherte Workouts</div>
+      <div class="section-title" style="margin-top:8px">Gespeicherte Workouts (Schnellstart)</div>
       ${mesoActive
         ? `<div class="info-box" style="margin-bottom:12px">
             <strong>Meso aktiv:</strong> Beim Start von Oberkörper/Unterkörper (oder jedem eigenen Plan)
             bleiben deine Übungen — dazu kommen Phasen-Soll (Sätze, RIR, Deload-Last).
           </div>`
-        : `<div class="sub" style="margin-bottom:10px">Tipp: Muskelaufbau → „Mesozyklus nutzen“ aktivieren, dann profitieren auch eigene Pläne von RIR-/Satz-Vorgaben.</div>`}
+        : `<div class="sub" style="margin-bottom:10px">Start ist direkt sichtbar. Übungen siehst du nur bei „Bearbeiten“.</div>`}
       ${saved.length ? `<div class="faq-wrap" style="margin-bottom:12px">${saved.map(w => `
         <div class="info-box" data-workoutid="${w.id}" style="margin-bottom:10px">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
@@ -1412,7 +1412,7 @@ export function createTrainingModule(ctx = {}) {
           </div>
         </div>
       `).join("")}</div>` : `<div class="info-box" style="margin-bottom:12px">Noch keine eigenen Workouts gespeichert.</div>`}
-      <button id="createManualWorkoutBtn" class="btn-main btn-dark" style="width:100%">➕ Eigenes Workout erstellen</button>
+      <button id="createManualWorkoutBtn" class="btn-main btn-dark" style="width:100%">Neues Workout erstellen</button>
       <div id="manualWorkoutBuilder"></div>
     `;
     wrap.querySelectorAll(".edit-custom-workout-btn").forEach((btn) => {
@@ -1627,9 +1627,13 @@ export function createTrainingModule(ctx = {}) {
         return `<button id="quickStartBtn" class="btn-session-primary" style="width:100%;margin-bottom:14px">Wie zuletzt: ${prefs.duration} min · ${bodyStr} · ${goalStr}</button>`;
       })()}
 
+      <div class="setup-headline-card">
+        <div class="setup-headline-kicker">Training Setup</div>
+        <div class="setup-headline-title">Einfach auswählen und starten</div>
+      </div>
       <div id="customWorkoutsSection"></div>
 
-      <div class="section-title">AI Workout Generator</div>
+      <div class="section-title">1) AI Workout</div>
       ${!trainingUser ? `<div class="info-box" style="margin-bottom:10px;padding:10px 12px;font-size:13px">Anzeigename fehlt — bitte unten unter <strong>Profil</strong> setzen.</div>` : ""}
 
       <div class="section-title" style="margin-top:4px">Dauer</div>
@@ -1653,7 +1657,7 @@ export function createTrainingModule(ctx = {}) {
       </div>
 
       <div id="mesoOptInWrap" style="${selectedGoal === "muskelaufbau" ? "" : "display:none"}">
-        <div class="section-title" style="margin-top:16px">Mesozyklus (separate Funktion)</div>
+        <div class="section-title" style="margin-top:16px">2) Optional: Mesozyklus</div>
         <button type="button" id="mesoOptInBtn" class="chip meso-opt-chip${mesoOptIn ? " active" : ""}" style="width:100%; text-align:left; padding:14px 16px;">
           <strong>${mesoOptIn ? "✓ RP-Mesozyklus aktiv" : "RP-Mesozyklus aktivieren"}</strong><br>
           <span style="font-size:0.85em; opacity:0.75;">5 Wochen Aufbau → Peak → Deload · Satzziele &amp; RIR</span>
@@ -1711,7 +1715,7 @@ export function createTrainingModule(ctx = {}) {
         </div>
       </div>
 
-      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:20px">${mesoOptIn && selectedGoal === "muskelaufbau" ? "Meso-Session starten →" : "AI Workout starten →"}</button>
+      <button id="startTrainingBtn" class="btn-main btn-lime" style="margin-top:20px">${mesoOptIn && selectedGoal === "muskelaufbau" ? "Jetzt Meso-Workout starten →" : "Jetzt AI Workout starten →"}</button>
 
       <button type="button" id="toggleProfileSetupBtn" class="exercise-details-toggle" style="margin-top:20px;width:100%;text-align:left">▸ Profil &amp; Verlauf</button>
       <div id="profileSetupCollapsible" class="exercise-details-collapsible">
