@@ -44,13 +44,13 @@
 
 <header class="app-header">
   <div class="app-brand">
-    <img id="appLogo" src="./assets/logo-dark.png" alt="Kellerkraft Gym" class="app-logo" width="40" height="40">
+    <img id="appLogo" src="./assets/logo-mark-dark.png" alt="Kellerkraft Gym" class="app-logo" width="40" height="40">
     <script>
       (function () {
         try {
           var theme = document.documentElement.getAttribute("data-theme") || "dark";
           var logo = document.getElementById("appLogo");
-          if (logo) logo.src = theme === "light" ? "./assets/logo-light.png" : "./assets/logo-dark.png";
+          if (logo) logo.src = theme === "light" ? "./assets/logo-mark-light.png" : "./assets/logo-mark-dark.png";
         } catch (e) { /* ignore */ }
       })();
     </script>
@@ -244,7 +244,7 @@
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.10</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Keller Gym · v1.15.11</div>
 
 <nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
   <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">

@@ -52,7 +52,7 @@ export function applyTheme(theme) {
   if (btn) btn.textContent = next === "light" ? "☀️" : "🌙";
   const logo = document.getElementById("appLogo");
   if (logo) {
-    logo.src = next === "light" ? "./assets/logo-light.png" : "./assets/logo-dark.png";
+    logo.src = next === "light" ? "./assets/logo-mark-light.png" : "./assets/logo-mark-dark.png";
   }
   const themeColor = document.querySelector('meta[name="theme-color"]');
   if (themeColor) {

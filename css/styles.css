@@ -99,7 +99,7 @@ html[data-theme="light"] {
   border-radius: 10px;
   display: block;
   flex-shrink: 0;
-  object-fit: contain;
+  object-fit: cover;
   background: #050505;
   border: 1px solid var(--border-soft);
 }
@@ -155,7 +155,12 @@ html[data-theme="light"] .app-logo {
   padding-top: calc(8px + env(safe-area-inset-top, 0px));
 }
 .offline-banner:not([hidden]) ~ .app-header {
-  padding-top: 12px;
+  padding-top: 16px;
+}
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .offline-banner:not([hidden]) ~ .app-header {
+    padding-top: 18px;
+  }
 }
 .offline-banner--training {
   color: #0a0a0a;
@@ -170,7 +175,19 @@ html[data-theme="light"] .offline-banner--training {
 .toast.show { opacity: 1; transform: translateY(0); }
 .toast.error { border-color: #5a1f1f; background: #2a1010; color: #ff9a9a; }
 .toast.success { border-color: #2f5a1f; background: #10240d; color: #b8e88a; }
-.theme-toggle-btn { background: var(--btn-dark-bg); border: 1px solid var(--border-soft); border-radius: 10px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 17px; margin-right: 8px; }
+.theme-toggle-btn {
+  background: var(--btn-dark-bg);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 17px;
+  flex-shrink: 0;
+}
 .app-footer-version {
   flex-shrink: 0;
   text-align: center;
@@ -585,13 +602,22 @@ img, video, canvas, svg, iframe { max-width: 100%; }
   flex-shrink: 0;
   background: var(--bg-header);
   border-bottom: 1px solid var(--border);
-  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  /* constant() for older iOS; env() thereafter — keep air below Dynamic Island */
+  padding-top: calc(16px + constant(safe-area-inset-top, 0px));
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
   padding-right: calc(var(--space-3) + env(safe-area-inset-right, 0px));
-  padding-bottom: 12px;
+  padding-bottom: 14px;
   padding-left: calc(var(--space-3) + env(safe-area-inset-left, 0px));
   display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-2);
   width: 100%;
   box-sizing: border-box;
+}
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .app-header {
+    padding-top: calc(18px + constant(safe-area-inset-top, 0px));
+    padding-top: calc(18px + env(safe-area-inset-top, 0px));
+  }
 }
 .app-header .eyebrow {
   font-size: 11px; letter-spacing: 0.06em;
