@@ -55,6 +55,8 @@
 
   /* Nav */
   --bottom-nav-h: 64px;
+  --workout-progress-h: 56px;
+  --set-rest-bar-h: 84px;
 }
 html[data-theme="light"] {
   --bg: #f4f4f2;
@@ -574,6 +576,7 @@ img, video, canvas, svg, iframe { max-width: 100%; }
   border-bottom: 1px solid var(--border);
   padding: 10px var(--space-3) 12px;
   width: 100%;
+  min-height: var(--workout-progress-h);
 }
 .workout-progress-label {
   font-size: 12px; font-weight: 600; color: var(--text-muted);
@@ -599,6 +602,7 @@ img, video, canvas, svg, iframe { max-width: 100%; }
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-header));
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
   padding: 10px var(--space-3) 12px;
+  min-height: var(--set-rest-bar-h);
 }
 .set-rest-bar[hidden] { display: none !important; }
 .set-rest-main {
@@ -821,6 +825,12 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
 /* ── Active workout session layout ── */
 .workout-session-active .bottom-nav { display: none; }
 .workout-session-active .wrap { padding-bottom: 0; }
+/* Reserve chrome bar space during an active workout to avoid layout jump. */
+.workout-session-active .workout-progress[hidden],
+.workout-session-active .set-rest-bar[hidden] {
+  display: block !important;
+  visibility: hidden;
+}
 
 .workout-action-bar {
   position: sticky;
