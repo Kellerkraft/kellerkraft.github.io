@@ -57,9 +57,6 @@
   --bottom-nav-h: 64px;
   --workout-progress-h: 56px;
   --set-rest-bar-h: 84px;
-
-  /* Shell height: 100dvh in Safari; standalone overrides to 100vh via JS */
-  --app-height: 100dvh;
 }
 html[data-theme="light"] {
   --bg: #f4f4f2;
@@ -156,11 +153,12 @@ html[data-theme="light"] .app-logo {
   box-sizing: border-box;
 }
 .app-top-chrome {
-  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
   width: 100%;
   box-sizing: border-box;
   background: var(--bg-header);
-  /* Only real env() inset — no fixed 59px fallback (that caused a huge top gap) */
   padding-top: constant(safe-area-inset-top);
   padding-top: env(safe-area-inset-top, 0px);
 }
@@ -191,12 +189,12 @@ html[data-theme="light"] .offline-banner--training {
   flex-shrink: 0;
 }
 .app-footer-version {
-  flex-shrink: 0;
   text-align: center;
   font-size: 10px;
   color: var(--text-dim);
   letter-spacing: 0.06em;
   padding: var(--space-2) 0;
+  margin-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
   width: 100%;
 }
 .export-btn-wrap { text-align: center; margin-top: 14px; }
@@ -575,20 +573,16 @@ html[data-theme="light"] .offline-banner--training {
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html {
-  height: var(--app-height, 100dvh);
-  overflow: hidden;
+  min-height: 100%;
+  min-height: 100dvh;
   -webkit-text-size-adjust: 100%;
   background: var(--bg);
 }
 body {
-  min-height: var(--app-height, 100dvh);
-  height: var(--app-height, 100dvh);
-  max-height: var(--app-height, 100dvh);
+  min-height: 100%;
+  min-height: 100dvh;
   width: 100%;
   max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
   overscroll-behavior-x: none;
   touch-action: pan-y;
   background: var(--bg);
@@ -600,8 +594,8 @@ body {
 }
 img, video, canvas, svg, iframe { max-width: 100%; }
 .app-header {
-  position: relative; z-index: 50;
-  flex-shrink: 0;
+  position: relative;
+  z-index: 50;
   background: var(--bg-header);
   border-bottom: 1px solid var(--border);
   padding: 14px calc(var(--space-3) + env(safe-area-inset-right, 0px)) 14px calc(var(--space-3) + env(safe-area-inset-left, 0px));
@@ -623,7 +617,6 @@ img, video, canvas, svg, iframe { max-width: 100%; }
 /* ── Workout progress (chrome bar) ── */
 .workout-progress {
   position: relative; z-index: 45;
-  flex-shrink: 0;
   background: var(--bg-header);
   border-bottom: 1px solid var(--border);
   padding: 10px var(--space-3) 12px;
@@ -648,7 +641,6 @@ img, video, canvas, svg, iframe { max-width: 100%; }
 
 /* ── Between-set rest timer (always visible in chrome) ── */
 .set-rest-bar {
-  flex-shrink: 0;
   width: 100%;
   z-index: 44;
   background: color-mix(in srgb, var(--accent) 10%, var(--bg-header));
@@ -716,12 +708,13 @@ img, video, canvas, svg, iframe { max-width: 100%; }
   flex: 0 0 auto;
 }
 
-/* ── Bottom navigation (flex shell — avoids iOS fixed-bar jump) ── */
+/* ── Bottom navigation (fixed — document scrolls so Safari chrome can collapse) ── */
 .bottom-nav {
-  position: relative;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 100;
-  flex-shrink: 0;
-  margin-top: auto;
   display: flex; align-items: stretch; justify-content: space-around;
   min-height: var(--bottom-nav-h);
   width: 100%;
@@ -731,9 +724,6 @@ img, video, canvas, svg, iframe { max-width: 100%; }
   background: var(--bg-header);
   border-top: 1px solid var(--border);
   box-sizing: border-box;
-}
-html.ios-bottom-safe-fallback .bottom-nav {
-  padding-bottom: 34px;
 }
 .bottom-tab {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
@@ -751,16 +741,12 @@ html.ios-bottom-safe-fallback .bottom-nav {
 .bottom-tab:active { opacity: 0.7; }
 
 .wrap {
-  flex: 1 1 auto;
-  align-self: center;
-  min-height: 0;
   width: 100%;
   max-width: 480px;
-  margin: 0;
-  padding: var(--space-3) var(--space-3) var(--space-3);
+  margin: 0 auto;
+  padding: var(--space-3);
+  padding-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px) + var(--space-3));
   overflow-x: hidden;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: none;
 }
 .tab-page { display: none; }
@@ -882,7 +868,12 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
 
 /* ── Active workout session layout ── */
 .workout-session-active .bottom-nav { display: none; }
-.workout-session-active .wrap { padding-bottom: 0; }
+.workout-session-active .wrap {
+  padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+}
+.workout-session-active .app-footer-version {
+  margin-bottom: env(safe-area-inset-bottom, 0px);
+}
 /* Keep progress chrome height stable if briefly hidden; do not reserve the
    between-set rest bar — that left an empty gray gap under "Übung x/y"
    and pushed the exercise card down while resting was inactive. */
@@ -1469,7 +1460,7 @@ html[data-theme="light"] .week-seg.busy {
 .week-color-key-swatch.free { background: var(--bg-elevated); border: 1px solid var(--border-soft); }
 .week-color-key-swatch.busy { background: var(--reserved); border: 1px solid var(--reserved-soft); }
 
-.modal-open-body { overflow: hidden; }
+.modal-open-body { overflow: hidden; height: 100%; }
 .modal-open-body .wrap { overflow: hidden; }
 #dayDetailModal { display: none; }
 #dayDetailModal.open { display: block; position: fixed; inset: 0; z-index: 200; }
