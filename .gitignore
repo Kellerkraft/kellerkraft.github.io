@@ -1,0 +1,9 @@
+# Capacitor / npm (native shell only — web PWA has no package.json)
+native/node_modules/
+native/www/
+native/.capacitor/
+native/ios/App/Podfile.lock
+native/ios/App/Pods/
+native/ios/DerivedData/
+*.xcuserstate
+.DS_Store

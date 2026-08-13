@@ -193,7 +193,20 @@ export function onConnectivityChange({ onOnline, onOffline } = {}) {
   };
 }
 
+function isCapacitorNative() {
+  try {
+    return typeof window !== "undefined"
+      && window.Capacitor
+      && typeof window.Capacitor.isNativePlatform === "function"
+      && window.Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
 export async function registerServiceWorker() {
+  /* Capacitor WKWebView: skip SW; IndexedDB offline queue still works. Web PWA unchanged. */
+  if (isCapacitorNative()) return null;
   if (!("serviceWorker" in navigator)) return null;
   try {
     const reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });

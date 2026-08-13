@@ -24,23 +24,17 @@ In Firebase Auth: **Anonymous** + **E-Mail/Passwort** (Passwort-Anbieter, nicht 
 ## Projektstruktur
 
 ```
-├── index.html
+├── index.html              Web-PWA (GitHub Pages) — Quelle der Wahrheit
 ├── css/styles.css
 ├── database.rules.json
-├── docs/data-model-v2.md
-├── assets/                 PWA-Icons, Body-Icons, Uebungsmedien
-└── js/
-    ├── app.js              Orchestrator (Boot, Home/Check-in, Nav)
-    ├── firebase.js         Firebase App / DB / Auth
-    ├── auth.js / auth-ui.js
-    ├── telemetry.js
-    ├── growth.js           Profil, Wochenziel-Auszeichnung, Streaks, Feed-UI
-    ├── reservations.js
-    ├── exercises.js
-    ├── training.js
-    ├── ui.js / state.js
-    ├── data.js / data-model.js
-    └── services/           users, plans, events, logs, roles, schema
+├── docs/
+├── assets/
+├── js/
+└── native/                 Capacitor iOS-Huelle (berührt Pages nicht)
+    ├── capacitor.config.json
+    ├── scripts/sync-web.mjs
+    ├── ios/                Xcode-Projekt (Build auf dem Mac)
+    └── www/                generiert (gitignore)
 ```
 
 ## Aenderungen vornehmen
@@ -51,13 +45,14 @@ In Firebase Auth: **Anonymous** + **E-Mail/Passwort** (Passwort-Anbieter, nicht 
 - **Auth-Flows** → `js/auth.js` + `js/auth-ui.js`
 - **Profil/Plan/Feed** → `js/growth.js` + `js/services/*`
 - **Neue Tabs** → `index.html` + `js/app.js` (`switchTab`)
+- **iOS-Shell** → `native/` (siehe `native/README.md`)
 
 ## Deployment (GitHub Pages)
 
-1. Dateien im Repo-Root belassen (Struktur wie oben)
+1. Dateien im Repo-Root belassen (Struktur wie oben) — **nicht** aus `native/www` deployen
 2. Settings → Pages → Branch `main` → `/ (root)`
 3. Nach Commit aktualisiert sich die Live-Seite automatisch
 
 ## iPhone / privater RC (spaeter App Store)
 
-Die Web-PWA ist nicht direkt im App Store. Plan fuer privaten TestFlight-RC (Capacitor-Huelle) und spaeteren Store-Release: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md).
+Capacitor-Shell liegt unter [`native/`](native/) und kopiert die Web-App nur nach `native/www` — die bestehende Web-Version bleibt unveraendert. Plan: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md). Kurz: [`native/README.md`](native/README.md).

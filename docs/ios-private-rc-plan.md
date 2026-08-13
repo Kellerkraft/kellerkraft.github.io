@@ -42,18 +42,18 @@ flowchart LR
 
 Ziel: Dieselbe UI und Logik, aber als `.ipa` für iPhone.
 
-### 1.1 Projekt-Scaffold
+### 1.1 Projekt-Scaffold — erledigt unter `native/`
 
-1. Im Repo ein App-Shell-Setup anlegen (z. B. Unterordner `native/` oder Root mit `package.json`):
-   - `@capacitor/core`, `@capacitor/cli`, `@capacitor/ios`
-   - `webDir` zeigt auf den gebauten/statischen Web-Root (aktuell Repo-Root bzw. ein Copy-Step der relevanten Dateien)
-2. `npx cap add ios` → Xcode-Projekt `ios/`
-3. `npx cap sync ios` nach jeder Web-Änderung
+Isoliert von GitHub Pages:
 
-**Besonderheit dieses Repos:** Kein Bundler, CDN-Imports (Firebase, Chart.js). Für Capacitor:
+- [`native/`](../native/) mit Capacitor 7, Bundle-ID `de.kellerkraft.app`
+- [`native/scripts/sync-web.mjs`](../native/scripts/sync-web.mjs) kopiert Root → `native/www` (generiert, gitignore)
+- [`native/ios/`](../native/ios/) Xcode-Projekt (Build/Signing nur auf dem Mac)
+- Shared Guard: [`js/offline.js`](../js/offline.js) registriert den Service Worker **nicht** in Capacitor; Web-PWA unverändert
 
-- Entweder Web-Assets inkl. CDN-URLs belassen (Netz nötig für erste Firebase/Chart-Ladung; SW-Cache hilft danach), **oder**
-- Firebase/Chart.js lokal vendoring (empfohlen für Offline-RC im Keller ohne WLAN).
+Nach Web-Änderungen auf dem Mac: `cd native && npm run sync:ios`.
+
+**Besonderheit dieses Repos:** Kein Bundler, CDN-Imports (Firebase, Chart.js). Für Capacitor vorerst CDN belassen (Netz beim ersten Start). Später: lokal vendoring für Offline-Keller.
 
 ### 1.2 Capacitor-Config (Kernpunkte)
 
@@ -150,9 +150,10 @@ Priorisiert, was im Repo umgesetzt werden sollte, sobald Account + Mac verfügba
 
 | Prio | Arbeit | Bezug |
 |------|--------|--------|
-| P0 | Capacitor-Scaffold + `ios/` + Sync-Skript | Phase 1 |
+| ~~P0~~ | ~~Capacitor-Scaffold + `ios/` + Sync-Skript~~ | erledigt in `native/` |
+| ~~P0~~ | ~~Native-Detection: SW nur im Browser, nicht in Capacitor~~ | erledigt in `js/offline.js` |
 | P0 | CDN-Abhängigkeiten lokal vendoring (Firebase, Chart.js, Fonts optional) | Offline-Keller |
-| P0 | Native-Detection: SW nur im Browser, nicht in Capacitor | Phase 1.3 |
+| P0 | Auf dem Mac: CocoaPods (`pod install`), Signing, USB-Deploy | Phase 3 |
 | P1 | Portrait-Lock, Splash Screen, App-Icon-Assets für iOS | Store/TestFlight Look |
 | P1 | ATS / Allowlist für Firebase-Hosts | Netzwerk |
 | P1 | Smoke-Test-Skript / Checkliste aus Phase 2 im Repo halten | QA |
