@@ -160,26 +160,9 @@ html[data-theme="light"] .app-logo {
   width: 100%;
   box-sizing: border-box;
   background: var(--bg-header);
-  /* Extends header color under the translucent status bar / Dynamic Island */
+  /* Only real env() inset — no fixed 59px fallback (that caused a huge top gap) */
   padding-top: constant(safe-area-inset-top);
   padding-top: env(safe-area-inset-top, 0px);
-}
-/* Opaque status-bar installs still report 0 top inset while overlapping content */
-html.ios-top-safe-fallback .app-top-chrome {
-  padding-top: 59px;
-}
-/* black-translucent status icons are light — keep them readable on light theme */
-html[data-theme="light"] .app-top-chrome {
-  background:
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45))
-      top / 100% env(safe-area-inset-top, 0px) no-repeat,
-    var(--bg-header);
-}
-html[data-theme="light"].ios-top-safe-fallback .app-top-chrome {
-  background:
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45))
-      top / 100% 59px no-repeat,
-    var(--bg-header);
 }
 .offline-banner--training {
   color: #0a0a0a;

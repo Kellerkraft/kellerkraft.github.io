@@ -20,21 +20,14 @@
       document.documentElement.setAttribute("data-theme", theme);
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#0a0a0a");
-      /* Keep black-translucent so viewport-fit=cover reports real safe-area insets.
-         (default/black + cover hides the logo under the status bar.) */
       var statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
       if (statusMeta) statusMeta.setAttribute("content", "black-translucent");
     } catch (e) { /* ignore */ }
 
-    /* iOS standalone: 100dvh/-webkit-fill-available under-report height by the top inset.
-       Use 100vh only in PWA so Safari keeps 100dvh. */
     var standalone = window.navigator.standalone === true
       || window.matchMedia("(display-mode: standalone)").matches
       || window.matchMedia("(display-mode: fullscreen)").matches;
-    if (standalone) {
-      document.documentElement.classList.add("ios-standalone");
-      document.documentElement.style.setProperty("--app-height", "100vh");
-    }
+    if (standalone) document.documentElement.classList.add("ios-standalone");
   })();
 </script>
 <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
@@ -57,30 +50,66 @@
   (function () {
     var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     if (!isIOS) return;
-    function probeSafeArea() {
-      var standalone = document.documentElement.classList.contains("ios-standalone")
+
+    function isStandalone() {
+      return document.documentElement.classList.contains("ios-standalone")
         || window.navigator.standalone === true
         || window.matchMedia("(display-mode: standalone)").matches
         || window.matchMedia("(display-mode: fullscreen)").matches;
-      if (!standalone) return;
-
-      var topProbe = document.createElement("div");
-      topProbe.style.cssText = "position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);visibility:hidden;pointer-events:none";
-      document.body.appendChild(topProbe);
-      var topInset = parseFloat(getComputedStyle(topProbe).paddingTop) || 0;
-      topProbe.remove();
-      /* Older installs may still use opaque status bar (inset 0) while content draws underneath */
-      if (topInset < 20) document.documentElement.classList.add("ios-top-safe-fallback");
-
-      var bottomProbe = document.createElement("div");
-      bottomProbe.style.cssText = "position:fixed;bottom:0;left:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none";
-      document.body.appendChild(bottomProbe);
-      var bottomInset = parseFloat(getComputedStyle(bottomProbe).paddingBottom) || 0;
-      bottomProbe.remove();
-      if (bottomInset < 8) document.documentElement.classList.add("ios-bottom-safe-fallback");
     }
-    if (document.body) probeSafeArea();
-    else document.addEventListener("DOMContentLoaded", probeSafeArea, { once: true });
+
+    function readInset(which) {
+      var el = document.createElement("div");
+      el.style.cssText = which === "top"
+        ? "position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);visibility:hidden;pointer-events:none"
+        : "position:fixed;bottom:0;left:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none";
+      (document.body || document.documentElement).appendChild(el);
+      var key = which === "top" ? "paddingTop" : "paddingBottom";
+      var value = parseFloat(getComputedStyle(el)[key]) || 0;
+      el.remove();
+      return value;
+    }
+
+    function syncStandaloneViewport() {
+      if (!isStandalone()) return;
+      document.documentElement.classList.add("ios-standalone");
+
+      var topInset = readInset("top");
+      var bottomInset = readInset("bottom");
+
+      /*
+        Translucent status bar (inset > 0): full 100vh + CSS env() padding.
+        Opaque / cached old install (inset ≈ 0): NEVER force 100vh or fake 59px
+        top padding — that combo shifts the shell down and clips the tab bar.
+        Match the visible webview height instead so tabs stay tappable.
+      */
+      if (topInset >= 20) {
+        document.documentElement.style.setProperty("--app-height", "100vh");
+      } else {
+        var visible = window.visualViewport && window.visualViewport.height
+          ? window.visualViewport.height
+          : window.innerHeight;
+        if (visible > 0) {
+          document.documentElement.style.setProperty("--app-height", Math.round(visible) + "px");
+        }
+      }
+
+      document.documentElement.classList.toggle("ios-bottom-safe-fallback", bottomInset < 8);
+    }
+
+    function arm() {
+      syncStandaloneViewport();
+      window.addEventListener("resize", syncStandaloneViewport);
+      window.addEventListener("orientationchange", function () {
+        setTimeout(syncStandaloneViewport, 300);
+      });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", syncStandaloneViewport);
+      }
+    }
+
+    if (document.body) arm();
+    else document.addEventListener("DOMContentLoaded", arm, { once: true });
   })();
 </script>
 
@@ -292,7 +321,7 @@
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Kellerkraft · v1.15.15</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Kellerkraft · v1.15.16</div>
 
 <nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
   <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">
