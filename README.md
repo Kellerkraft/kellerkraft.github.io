@@ -24,31 +24,27 @@ In Firebase Auth: **Anonymous** + **E-Mail/Passwort** (Passwort-Anbieter, nicht 
 ## Projektstruktur
 
 ```
-├── index.html              Website / PWA (GitHub Pages) — eigenstaendig
-├── css/styles.css
-├── database.rules.json
+├── index.html              Website / PWA — Quelle der Wahrheit
+├── css/ / js/ / assets/
 ├── docs/
-├── assets/
-├── js/
-└── native/                 iOS-App — komplett separater Strang
-    ├── app/                eigene App-Frontend-Quelle
-    ├── ios/                Xcode-Projekt
-    └── www/                Build-Output (gitignore)
+└── native/                 iOS-Huelle (uebernimmt Website beim Sync)
+    ├── scripts/build-www.mjs
+    ├── ios/
+    └── www/                generiert aus Website (gitignore)
 ```
 
 ## Aenderungen vornehmen
 
-- **Website:** Dateien im Repo-Root (`js/`, `css/`, `index.html`, …)
-- **iOS-App:** nur unter `native/` — siehe [`native/README.md`](native/README.md)
-- Die beiden Stränge teilen sich absichtlich **keinen** Live-Sync
+- **Produkt/UI:** im Repo-Root (Website). Die iOS-App folgt mit `cd native && npm run sync:ios`.
+- **Nur iOS-Huelle (Signing, Icons, …):** `native/ios/` — siehe [`native/README.md`](native/README.md)
 
 ## Deployment (GitHub Pages)
 
 1. Website-Dateien im Repo-Root belassen
 2. Settings → Pages → Branch `main` → `/ (root)`
-3. `native/` wird von Pages nicht als App ausgeliefert; die Website bleibt die Website
+3. `native/` aendert die ausgelieferte Website nicht
 
-## iPhone-App (separat)
+## iPhone-App
 
-Schritte und Isolation: [`native/README.md`](native/README.md).  
-Gesamtplan TestFlight/Store: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md).
+Website führt, App folgt: [`native/README.md`](native/README.md).  
+Plan TestFlight/Store: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md).

@@ -1,34 +1,32 @@
-# Kellerkraft iOS App (separat von der Website)
+# Kellerkraft iOS App — Website führt, App folgt
 
-Die **Website** (Repo-Root → GitHub Pages) bleibt eine eigenständige Web-PWA.  
-Die **App** wird hier unter `native/` in Schritten separat weiterentwickelt.
+Für die nächste Zeit: **Änderungen machst du an der Website** (Repo-Root).  
+Die iOS-App übernimmt sie beim Sync in die Capacitor-Hülle. Die Website wird dabei nicht überschrieben.
 
 ```
-Repo-Root/          ← Website only (nicht von native/ anfassen)
-native/
-  app/              ← App-Frontend (eigene Quelle, committed)
-  www/              ← Build-Output aus app/ (gitignore)
-  ios/              ← Xcode / Capacitor
-  scripts/          ← build-www, optional import-from-web
+Website (Repo-Root)  ──build-www──►  native/www  ──cap sync──►  iOS-App
+     ↑ führt                              ↑ Kopie + native Patches
 ```
 
-## Entwicklungsregel
+| Was | Wo |
+|-----|-----|
+| Features, UI, Training, Auth | Repo-Root (`index.html`, `js/`, `css/`, …) |
+| iOS-Hülle, Bundle-ID, Xcode | `native/ios/` |
+| Generierte App-Kopie | `native/www/` (nicht von Hand editieren) |
 
-| Ziel | Ort |
-|------|-----|
-| Website / PWA | Repo-Root (`index.html`, `js/`, `css/`, …) |
-| iOS-App | `native/app/` + `native/ios/` |
+## Workflow nach Website-Änderungen
 
-Kein automatischer Sync Website → App. Ein Import ist nur bewusst und optional:
+Auf dem Mac:
 
 ```bash
-cd native && npm run import-from-web -- --force
+cd native
+npm run sync:ios
+# optional: npm run open:ios
 ```
 
-## Schritte (App separat)
+Damit liegt der aktuelle Website-Stand in der App (plus kleine native-only Patches, z. B. kein Service Worker in Capacitor).
 
-### Schritt 1 — Shell lokal starten (jetzt möglich)
-Voraussetzung: Mac + Xcode. Solo-USB-Test ohne bezahlten Developer-Account möglich.
+## Erstes Öffnen in Xcode
 
 ```bash
 cd native
@@ -37,29 +35,8 @@ npm run sync:ios
 npm run open:ios
 ```
 
-In Xcode: Signing Team wählen, Bundle-ID `de.kellerkraft.app`, aufs iPhone deployen.
+Signing Team setzen → aufs iPhone deployen (USB; gratis Apple-ID reicht für Solo-Tests).
 
-### Schritt 2 — App-UI/Flows nur in `native/app` härten
-Safe Area, Login, Training, Offline (ohne Service Worker in Capacitor — Guard liegt nur in `native/app/js/offline.js`).  
-Website-Code im Root bleibt unberührt.
+## Später: App wieder separat
 
-Nach jeder App-Änderung:
-
-```bash
-npm run sync:ios
-```
-
-### Schritt 3 — Offline/Assets für die App
-CDN (Firebase, Chart.js) in der App lokal vendoring — eigener Schritt, nur unter `native/app`.
-
-### Schritt 4 — Privater TestFlight
-Apple Developer Program (~99 $/Jahr), Archive → TestFlight Internal für die Keller-Gruppe.
-
-### Schritt 5 — Später öffentlicher App Store
-Account-Löschung, Privacy-URL, Screenshots — siehe `docs/ios-private-rc-plan.md`.
-
-## Was die Website nicht merkt
-
-- Kein Deploy aus `native/`
-- Root-`index.html` / Root-`js/` werden von Capacitor-Skripten **nicht** geschrieben
-- GitHub Pages weiter Branch `main` → `/ (root)`
+Wenn Store-Anforderungen (Account-Löschung, anderes Offline, …) die App von der Website wegbiegen sollen, kann `native/app` als eigener Quellbaum wieder eingeführt werden. Bis dahin bleibt: **eine Quelle = Website**.

@@ -42,21 +42,18 @@ flowchart LR
 
 Ziel: Dieselbe UI und Logik, aber als `.ipa` für iPhone.
 
-### 1.1 Projekt-Scaffold — erledigt, **separat** unter `native/`
+### 1.1 Projekt-Scaffold — Website führt, App folgt
 
-Website (Repo-Root / GitHub Pages) und iOS-App sind **zwei Stränge**:
-
-| Strang | Pfad | Deploy |
+| Strang | Pfad | Rolle |
 |--------|------|--------|
-| Website / PWA | Repo-Root | GitHub Pages |
-| iOS-App | [`native/app/`](../native/app/) + [`native/ios/`](../native/ios/) | Xcode / TestFlight |
+| Website / PWA | Repo-Root | **Quelle der Wahrheit** (GitHub Pages) |
+| iOS-Hülle | [`native/`](../native/) | Übernimmt Website beim Sync |
 
-- Build: [`native/scripts/build-www.mjs`](../native/scripts/build-www.mjs) baut nur `native/app` → `native/www` (nicht den Root)
-- Optionaler Baseline-Import: `cd native && npm run import-from-web -- --force` (überschreibt nur `native/app`, nie die Website)
-- SW-Skip nur in [`native/app/js/offline.js`](../native/app/js/offline.js) — Website-[`js/offline.js`](../js/offline.js) unverändert
-- Schrittfolge: [`native/README.md`](../native/README.md)
+- Build: [`native/scripts/build-www.mjs`](../native/scripts/build-www.mjs) kopiert Root → `native/www`, wendet nur native Patches an (schreibt nie zurück auf die Website)
+- Nach Website-Änderungen auf dem Mac: `cd native && npm run sync:ios`
+- Details: [`native/README.md`](../native/README.md)
 
-**Besonderheit:** Die App startet als Kopie der Web-UI, wird aber **in Schritten separat** weiterentwickelt (kein automatischer Sync).
+Später kann die App wieder divergieren (eigener Quellbaum); bis dahin eine Produktquelle = Website.
 
 ### 1.2 Capacitor-Config (Kernpunkte)
 
