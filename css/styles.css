@@ -189,14 +189,116 @@ html[data-theme="light"] .offline-banner--training {
   flex-shrink: 0;
 }
 .app-footer-version {
+  width: 100%;
   text-align: center;
   font-size: 10px;
   color: var(--text-dim);
   letter-spacing: 0.06em;
-  padding: var(--space-2) 0;
+  padding: 4px 0 0;
+  margin: 0;
+}
+.app-legal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 14px var(--space-3) 10px;
   margin-bottom: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
   width: 100%;
+  box-sizing: border-box;
 }
+.app-legal-footer a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.app-legal-footer a:hover,
+.app-legal-footer a:focus-visible {
+  color: var(--accent-soft);
+  outline: none;
+}
+.app-legal-sep { opacity: 0.5; }
+
+/* ── Standalone legal pages ── */
+.legal-body {
+  min-height: 100dvh;
+  padding:
+    calc(20px + env(safe-area-inset-top, 0px))
+    var(--space-3)
+    calc(28px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+}
+.legal-page {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+}
+.legal-back {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+.legal-back:hover { color: var(--accent-soft); }
+.legal-title {
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 34px;
+  letter-spacing: 0.5px;
+  line-height: 1.05;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+.legal-lead {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 22px;
+}
+.legal-section {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.legal-section h2 {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.legal-section p,
+.legal-section li {
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.legal-section ul {
+  list-style: disc;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.legal-section a {
+  color: var(--accent-soft);
+  text-decoration: none;
+}
+.legal-links {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.legal-links a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.legal-links a:hover { color: var(--accent-soft); }
 .export-btn-wrap { text-align: center; margin-top: 14px; }
 .pr-badge { display: inline-block; background: linear-gradient(90deg, #ffb84d, #ffd84d); color: #1a1a0a; font-size: 10px; font-weight: 600; letter-spacing: .5px; padding: 2px 7px; border-radius: 20px; margin-left: 6px; vertical-align: middle; }
 .hist-chart-wrap { position: relative; height: 160px; margin: 8px 0 4px; max-width: 100%; overflow: hidden; }
@@ -871,7 +973,7 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
 .workout-session-active .wrap {
   padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
 }
-.workout-session-active .app-footer-version {
+.workout-session-active .app-legal-footer {
   margin-bottom: env(safe-area-inset-bottom, 0px);
 }
 /* Keep progress chrome height stable if briefly hidden; do not reserve the

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Impressum · Kellerkraft</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0a0a0a">
+<script>
+  (function () {
+    try {
+      var theme = localStorage.getItem("kg_theme") || "dark";
+      document.documentElement.setAttribute("data-theme", theme);
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#0a0a0a");
+    } catch (e) { /* ignore */ }
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body class="legal-body">
+  <main class="legal-page">
+    <a class="legal-back" href="./">← Zurück zur App</a>
+    <h1 class="legal-title">Impressum</h1>
+    <p class="legal-lead">Privates Projekt · Kellerkraft</p>
+
+    <section class="legal-section">
+      <h2>Verantwortlich</h2>
+      <p>Peter Finger</p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Kontakt</h2>
+      <p>
+        E-Mail:
+        <a href="mailto:peter_finger@icloud.com">peter_finger@icloud.com</a>
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Anschrift</h2>
+      <p>
+        Eine ladungsfähige Postadresse wird bei berechtigtem Interesse
+        auf Anfrage mitgeteilt.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Hinweis</h2>
+      <p>
+        Kellerkraft ist derzeit ein privates Angebot und nicht für den
+        allgemeinen Geschäftsverkehr bestimmt. Sollte das Angebot später
+        öffentlich oder geschäftlich genutzt werden, wird dieses Impressum
+        entsprechend ergänzt.
+      </p>
+    </section>
+
+    <p class="legal-links">
+      <a href="./datenschutz.html">Datenschutzerklärung</a>
+    </p>
+  </main>
+</body>
+</html>

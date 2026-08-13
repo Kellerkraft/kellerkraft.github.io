@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Datenschutz · Kellerkraft</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0a0a0a">
+<script>
+  (function () {
+    try {
+      var theme = localStorage.getItem("kg_theme") || "dark";
+      document.documentElement.setAttribute("data-theme", theme);
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#0a0a0a");
+    } catch (e) { /* ignore */ }
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body class="legal-body">
+  <main class="legal-page">
+    <a class="legal-back" href="./">← Zurück zur App</a>
+    <h1 class="legal-title">Datenschutz</h1>
+    <p class="legal-lead">Kurz und verständlich · Stand August 2026</p>
+
+    <section class="legal-section">
+      <h2>Verantwortlich</h2>
+      <p>
+        Peter Finger<br>
+        E-Mail:
+        <a href="mailto:peter_finger@icloud.com">peter_finger@icloud.com</a>
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Welche Daten werden verarbeitet?</h2>
+      <ul>
+        <li>Anmeldedaten (z.&nbsp;B. E-Mail-Konto oder anonyme Sitzung über Firebase Authentication)</li>
+        <li>Profilangaben wie Anzeigename, Avatar und Trainingsziel</li>
+        <li>Reservierungen, Trainingslogs und zugehörige Zeitstempel</li>
+        <li>Technische Daten im Browser (z.&nbsp;B. Theme-Einstellung in localStorage)</li>
+      </ul>
+    </section>
+
+    <section class="legal-section">
+      <h2>Wofür?</h2>
+      <p>
+        Die Daten dienen ausschließlich dem Betrieb von Kellerkraft:
+        Anmeldung, Gym-Reservierung, Training und Offline-Nutzung.
+        Es findet kein Verkauf von Daten statt und kein Tracking zu Werbezwecken.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Dienstleister</h2>
+      <p>
+        Hosting über GitHub Pages.
+        Authentifizierung und Datenbank über Google Firebase
+        (Authentication und Realtime Database, Region Europa).
+        Es gelten zusätzlich die Datenschutzhinweise dieser Anbieter.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Speicherdauer</h2>
+      <p>
+        Daten bleiben gespeichert, solange das Konto bzw. die App-Nutzung
+        aktiv ist oder sie für den Betrieb der App benötigt werden.
+        Lokale Einstellungen bleiben im Browser, bis sie gelöscht werden.
+      </p>
+    </section>
+
+    <section class="legal-section">
+      <h2>Deine Rechte</h2>
+      <p>
+        Du kannst Auskunft, Berichtigung oder Löschung deiner Daten verlangen.
+        Schreib dazu einfach an
+        <a href="mailto:peter_finger@icloud.com">peter_finger@icloud.com</a>.
+      </p>
+    </section>
+
+    <p class="legal-links">
+      <a href="./impressum.html">Impressum</a>
+    </p>
+  </main>
+</body>
+</html>
