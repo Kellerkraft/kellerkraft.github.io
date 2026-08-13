@@ -9,7 +9,7 @@
 <link rel="manifest" href="./assets/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Kellerkraft">
 <meta name="theme-color" content="#0a0a0a">
 <meta name="format-detection" content="telephone=no">
@@ -20,9 +20,21 @@
       document.documentElement.setAttribute("data-theme", theme);
       var meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#0a0a0a");
+      /* Keep black-translucent so viewport-fit=cover reports real safe-area insets.
+         (default/black + cover hides the logo under the status bar.) */
       var statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
-      if (statusMeta) statusMeta.setAttribute("content", theme === "light" ? "default" : "black");
+      if (statusMeta) statusMeta.setAttribute("content", "black-translucent");
     } catch (e) { /* ignore */ }
+
+    /* iOS standalone: 100dvh/-webkit-fill-available under-report height by the top inset.
+       Use 100vh only in PWA so Safari keeps 100dvh. */
+    var standalone = window.navigator.standalone === true
+      || window.matchMedia("(display-mode: standalone)").matches
+      || window.matchMedia("(display-mode: fullscreen)").matches;
+    if (standalone) {
+      document.documentElement.classList.add("ios-standalone");
+      document.documentElement.style.setProperty("--app-height", "100vh");
+    }
   })();
 </script>
 <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
@@ -46,16 +58,26 @@
     var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     if (!isIOS) return;
     function probeSafeArea() {
-      var probe = document.createElement("div");
-      probe.style.cssText = "position:fixed;bottom:0;left:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none";
-      document.body.appendChild(probe);
-      var inset = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
-      probe.remove();
-      var standalone = window.matchMedia("(display-mode: standalone)").matches
-        || window.matchMedia("(display-mode: fullscreen)").matches
-        || window.navigator.standalone === true;
-      /* Opaque status bar → top inset is 0 by design; only fall back for missing bottom inset in PWA */
-      if (standalone && inset < 8) document.documentElement.classList.add("ios-bottom-safe-fallback");
+      var standalone = document.documentElement.classList.contains("ios-standalone")
+        || window.navigator.standalone === true
+        || window.matchMedia("(display-mode: standalone)").matches
+        || window.matchMedia("(display-mode: fullscreen)").matches;
+      if (!standalone) return;
+
+      var topProbe = document.createElement("div");
+      topProbe.style.cssText = "position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);visibility:hidden;pointer-events:none";
+      document.body.appendChild(topProbe);
+      var topInset = parseFloat(getComputedStyle(topProbe).paddingTop) || 0;
+      topProbe.remove();
+      /* Older installs may still use opaque status bar (inset 0) while content draws underneath */
+      if (topInset < 20) document.documentElement.classList.add("ios-top-safe-fallback");
+
+      var bottomProbe = document.createElement("div");
+      bottomProbe.style.cssText = "position:fixed;bottom:0;left:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none";
+      document.body.appendChild(bottomProbe);
+      var bottomInset = parseFloat(getComputedStyle(bottomProbe).paddingBottom) || 0;
+      bottomProbe.remove();
+      if (bottomInset < 8) document.documentElement.classList.add("ios-bottom-safe-fallback");
     }
     if (document.body) probeSafeArea();
     else document.addEventListener("DOMContentLoaded", probeSafeArea, { once: true });
@@ -270,7 +292,7 @@
 
 <div id="dayDetailModal"></div>
 
-<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Kellerkraft · v1.15.14</div>
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Kellerkraft · v1.15.15</div>
 
 <nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
   <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">

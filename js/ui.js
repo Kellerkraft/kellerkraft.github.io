@@ -60,7 +60,8 @@ export function applyTheme(theme) {
   }
   const statusBar = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
   if (statusBar) {
-    statusBar.setAttribute("content", next === "light" ? "default" : "black");
+    /* Must stay translucent with viewport-fit=cover or the logo sits under the status bar */
+    statusBar.setAttribute("content", "black-translucent");
   }
   localStorage.setItem("kg_theme", next);
 }

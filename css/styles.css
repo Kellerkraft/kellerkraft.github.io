@@ -57,6 +57,9 @@
   --bottom-nav-h: 64px;
   --workout-progress-h: 56px;
   --set-rest-bar-h: 84px;
+
+  /* Shell height: 100dvh in Safari; standalone overrides to 100vh via JS */
+  --app-height: 100dvh;
 }
 html[data-theme="light"] {
   --bg: #f4f4f2;
@@ -156,8 +159,27 @@ html[data-theme="light"] .app-logo {
   flex-shrink: 0;
   width: 100%;
   box-sizing: border-box;
+  background: var(--bg-header);
+  /* Extends header color under the translucent status bar / Dynamic Island */
   padding-top: constant(safe-area-inset-top);
   padding-top: env(safe-area-inset-top, 0px);
+}
+/* Opaque status-bar installs still report 0 top inset while overlapping content */
+html.ios-top-safe-fallback .app-top-chrome {
+  padding-top: 59px;
+}
+/* black-translucent status icons are light — keep them readable on light theme */
+html[data-theme="light"] .app-top-chrome {
+  background:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45))
+      top / 100% env(safe-area-inset-top, 0px) no-repeat,
+    var(--bg-header);
+}
+html[data-theme="light"].ios-top-safe-fallback .app-top-chrome {
+  background:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.45))
+      top / 100% 59px no-repeat,
+    var(--bg-header);
 }
 .offline-banner--training {
   color: #0a0a0a;
@@ -570,21 +592,15 @@ html[data-theme="light"] .offline-banner--training {
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html {
-  height: 100%;
-  height: -webkit-fill-available;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   -webkit-text-size-adjust: 100%;
+  background: var(--bg);
 }
 body {
-  min-height: 100%;
-  min-height: 100dvh;
-  min-height: -webkit-fill-available;
-  height: 100%;
-  height: 100dvh;
-  height: -webkit-fill-available;
-  max-height: 100%;
-  max-height: 100dvh;
-  max-height: -webkit-fill-available;
+  min-height: var(--app-height, 100dvh);
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   width: 100%;
   max-width: 100%;
   display: flex;
