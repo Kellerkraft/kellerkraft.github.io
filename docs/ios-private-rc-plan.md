@@ -42,18 +42,21 @@ flowchart LR
 
 Ziel: Dieselbe UI und Logik, aber als `.ipa` für iPhone.
 
-### 1.1 Projekt-Scaffold — erledigt unter `native/`
+### 1.1 Projekt-Scaffold — erledigt, **separat** unter `native/`
 
-Isoliert von GitHub Pages:
+Website (Repo-Root / GitHub Pages) und iOS-App sind **zwei Stränge**:
 
-- [`native/`](../native/) mit Capacitor 7, Bundle-ID `de.kellerkraft.app`
-- [`native/scripts/sync-web.mjs`](../native/scripts/sync-web.mjs) kopiert Root → `native/www` (generiert, gitignore)
-- [`native/ios/`](../native/ios/) Xcode-Projekt (Build/Signing nur auf dem Mac)
-- Shared Guard: [`js/offline.js`](../js/offline.js) registriert den Service Worker **nicht** in Capacitor; Web-PWA unverändert
+| Strang | Pfad | Deploy |
+|--------|------|--------|
+| Website / PWA | Repo-Root | GitHub Pages |
+| iOS-App | [`native/app/`](../native/app/) + [`native/ios/`](../native/ios/) | Xcode / TestFlight |
 
-Nach Web-Änderungen auf dem Mac: `cd native && npm run sync:ios`.
+- Build: [`native/scripts/build-www.mjs`](../native/scripts/build-www.mjs) baut nur `native/app` → `native/www` (nicht den Root)
+- Optionaler Baseline-Import: `cd native && npm run import-from-web -- --force` (überschreibt nur `native/app`, nie die Website)
+- SW-Skip nur in [`native/app/js/offline.js`](../native/app/js/offline.js) — Website-[`js/offline.js`](../js/offline.js) unverändert
+- Schrittfolge: [`native/README.md`](../native/README.md)
 
-**Besonderheit dieses Repos:** Kein Bundler, CDN-Imports (Firebase, Chart.js). Für Capacitor vorerst CDN belassen (Netz beim ersten Start). Später: lokal vendoring für Offline-Keller.
+**Besonderheit:** Die App startet als Kopie der Web-UI, wird aber **in Schritten separat** weiterentwickelt (kein automatischer Sync).
 
 ### 1.2 Capacitor-Config (Kernpunkte)
 
@@ -70,11 +73,10 @@ Nach Web-Änderungen auf dem Mac: `cd native && npm run sync:ios`.
 
 In WKWebView (Capacitor) verhalten sich Service Worker **anders / eingeschränkt** als in Safari-PWA.
 
-**RC-Empfehlung:**
+**RC-Empfehlung (nur App-Strang):**
 
-- In der nativen App SW-Registrierung in [`js/offline.js`](../js/offline.js) **überspringen**, wenn `Capacitor.isNativePlatform()`.
-- Offline weiter über **IndexedDB-Queue** (bereits vorhanden) + gebündelte lokalen Assets.
-- Optional später: Capacitor-Filesystem / Network-Plugin für robustere Sync-Hinweise.
+- In [`native/app/js/offline.js`](../native/app/js/offline.js) SW überspringen, wenn `Capacitor.isNativePlatform()` — Website-Root nicht anfassen.
+- Offline weiter über **IndexedDB-Queue** + gebündelte lokalen Assets in der App.
 
 ### 1.4 Firebase Auth in der Shell
 
@@ -150,9 +152,9 @@ Priorisiert, was im Repo umgesetzt werden sollte, sobald Account + Mac verfügba
 
 | Prio | Arbeit | Bezug |
 |------|--------|--------|
-| ~~P0~~ | ~~Capacitor-Scaffold + `ios/` + Sync-Skript~~ | erledigt in `native/` |
-| ~~P0~~ | ~~Native-Detection: SW nur im Browser, nicht in Capacitor~~ | erledigt in `js/offline.js` |
-| P0 | CDN-Abhängigkeiten lokal vendoring (Firebase, Chart.js, Fonts optional) | Offline-Keller |
+| ~~P0~~ | ~~Capacitor-Scaffold + getrennter `native/app`-Quellbaum~~ | erledigt |
+| ~~P0~~ | ~~SW-Skip nur in `native/app`, Website unberührt~~ | erledigt |
+| P0 | CDN-Abhängigkeiten lokal vendoring **in `native/app`** | Offline-Keller |
 | P0 | Auf dem Mac: CocoaPods (`pod install`), Signing, USB-Deploy | Phase 3 |
 | P1 | Portrait-Lock, Splash Screen, App-Icon-Assets für iOS | Store/TestFlight Look |
 | P1 | ATS / Allowlist für Firebase-Hosts | Netzwerk |

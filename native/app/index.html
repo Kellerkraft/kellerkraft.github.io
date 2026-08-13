@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kellerkraft</title>
+
+<!-- PWA / Home Screen Icon Setup -->
+<link rel="manifest" href="./assets/manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kellerkraft">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="format-detection" content="telephone=no">
+<script>
+  (function () {
+    try {
+      var theme = localStorage.getItem("kg_theme") || "dark";
+      document.documentElement.setAttribute("data-theme", theme);
+      var meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f5f5f5" : "#0a0a0a");
+      /* Keep black-translucent so viewport-fit=cover reports real safe-area insets.
+         (default/black + cover hides the logo under the status bar.) */
+      var statusMeta = document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');
+      if (statusMeta) statusMeta.setAttribute("content", "black-translucent");
+    } catch (e) { /* ignore */ }
+
+    /* iOS standalone: 100dvh/-webkit-fill-available under-report height by the top inset.
+       Use 100vh only in PWA so Safari keeps 100dvh. */
+    var standalone = window.navigator.standalone === true
+      || window.matchMedia("(display-mode: standalone)").matches
+      || window.matchMedia("(display-mode: fullscreen)").matches;
+    if (standalone) {
+      document.documentElement.classList.add("ios-standalone");
+      document.documentElement.style.setProperty("--app-height", "100vh");
+    }
+  })();
+</script>
+<link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon-180x180.png">
+<link rel="apple-touch-icon" sizes="167x167" href="./assets/apple-touch-icon-167x167.png">
+<link rel="apple-touch-icon" sizes="152x152" href="./assets/apple-touch-icon-152x152.png">
+<link rel="apple-touch-icon" sizes="120x120" href="./assets/apple-touch-icon-120x120.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./assets/icon-192x192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="./assets/icon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="./assets/icon-16x16.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="./css/styles.css">
+<script type="module" src="./js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<script>
+  (function () {
+    var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isIOS) return;
+    function probeSafeArea() {
+      var standalone = document.documentElement.classList.contains("ios-standalone")
+        || window.navigator.standalone === true
+        || window.matchMedia("(display-mode: standalone)").matches
+        || window.matchMedia("(display-mode: fullscreen)").matches;
+      if (!standalone) return;
+
+      var topProbe = document.createElement("div");
+      topProbe.style.cssText = "position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);visibility:hidden;pointer-events:none";
+      document.body.appendChild(topProbe);
+      var topInset = parseFloat(getComputedStyle(topProbe).paddingTop) || 0;
+      topProbe.remove();
+      /* Older installs may still use opaque status bar (inset 0) while content draws underneath */
+      if (topInset < 20) document.documentElement.classList.add("ios-top-safe-fallback");
+
+      var bottomProbe = document.createElement("div");
+      bottomProbe.style.cssText = "position:fixed;bottom:0;left:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none";
+      document.body.appendChild(bottomProbe);
+      var bottomInset = parseFloat(getComputedStyle(bottomProbe).paddingBottom) || 0;
+      bottomProbe.remove();
+      if (bottomInset < 8) document.documentElement.classList.add("ios-bottom-safe-fallback");
+    }
+    if (document.body) probeSafeArea();
+    else document.addEventListener("DOMContentLoaded", probeSafeArea, { once: true });
+  })();
+</script>
+
+<div class="app-top-chrome">
+<div id="offlineBanner" class="offline-banner" hidden>Offline-Modus</div>
+
+<header class="app-header">
+  <div class="app-brand">
+    <img id="appLogo" src="./assets/logo-mark-dark.png" alt="Kellerkraft" class="app-logo" width="40" height="40">
+    <script>
+      (function () {
+        try {
+          var theme = document.documentElement.getAttribute("data-theme") || "dark";
+          var logo = document.getElementById("appLogo");
+          if (logo) logo.src = theme === "light" ? "./assets/logo-mark-light.png" : "./assets/logo-mark-dark.png";
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
+    <div class="app-brand-text">
+      <span class="app-wordmark">Kellerkraft</span>
+      <h1 id="navLabel">Übersicht</h1>
+    </div>
+  </div>
+  <button id="themeToggleBtn" class="theme-toggle-btn" aria-label="Darstellung umschalten" title="Hell/Dunkel umschalten">🌙</button>
+</header>
+</div>
+
+<div id="toastWrap"></div>
+
+<div id="workoutProgressBar" class="workout-progress" hidden>
+  <div class="workout-progress-label" id="workoutProgressLabel">Übung 1 / 6</div>
+  <div class="workout-progress-track"><div class="workout-progress-fill" id="workoutProgressFill"></div></div>
+</div>
+
+<div id="setRestBar" class="set-rest-bar" hidden>
+  <div class="set-rest-main">
+    <div class="set-rest-copy">
+      <span class="set-rest-label" id="setRestLabel">Pause bis nächster Satz</span>
+      <span class="set-rest-display font-mono" id="setRestDisplay">1:30</span>
+    </div>
+    <div class="set-rest-actions">
+      <button type="button" class="set-rest-btn" id="setRestPauseBtn" aria-label="Pause pausieren">⏸</button>
+      <button type="button" class="set-rest-btn set-rest-btn--skip" id="setRestSkipBtn" aria-label="Pause überspringen">⏭</button>
+    </div>
+  </div>
+  <div class="set-rest-dur" id="setRestDurRow" role="group" aria-label="Pausendauer"></div>
+</div>
+
+<div class="wrap">
+
+  <!-- ========== HOME ========== -->
+  <div class="tab-page active" id="page-home">
+    <div id="card"><div class="sub" style="padding:40px 0">Verbinde...</div></div>
+    <div id="upcoming"></div>
+    <div id="form"></div>
+    <div id="authPanel"></div>
+    <div id="growthMvpSections"></div>
+  </div>
+
+  <!-- ========== RESERVIEREN ========== -->
+  <div class="tab-page" id="page-reserve">
+    <div class="section-title">Wochenübersicht</div>
+    <div id="weekOverview"></div>
+    <div id="reserveContent"></div>
+  </div>
+
+  <!-- ========== TRAINING ========== -->
+  <div class="tab-page" id="page-training">
+    <div id="trainingContent"></div>
+  </div>
+
+  <!-- ========== AUSSTATTUNG ========== -->
+  <div class="tab-page" id="page-ausstattung">
+    <div class="section-title">Ausstattung &amp; Bedienung</div>
+    <div class="faq-wrap">
+
+      <div class="faq-section">
+        <button class="faq-section-btn">
+          <span class="faq-section-icon">💡</span>
+          <span class="faq-section-label">Licht</span>
+          <span class="faq-section-chevron">▾</span>
+        </button>
+        <div class="faq-section-body"><div class="faq-section-inner">
+          <div class="faq-item">
+            <button class="faq-question">Deckenlampen <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li>Weiße Fernbedienung: <strong style="color:#eee">On / Off</strong> zum Ein- und Ausschalten</li>
+                <li>Taste <strong style="color:#eee">Hoch</strong> → heller</li>
+                <li>Taste <strong style="color:#eee">Runter</strong> → dunkler</li>
+              </ul>
+            </div></div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question">LED Streifen <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li>Taste an der <strong style="color:#eee">Power Bank</strong> drücken</li>
+                <li>Dann <strong style="color:#eee">mittlere Taste</strong> am weißen Kabel drücken</li>
+                <li>Heller → <strong style="color:#eee">obere Taste</strong></li>
+                <li>Dunkler → <strong style="color:#eee">untere Taste</strong></li>
+              </ul>
+              <div class="faq-note">⚠️ Bei maximaler Helligkeit kann die LED-Leiste ausgehen – die Power Bank liefert dann nicht genug Spannung. Einfach etwas dunkler stellen.</div>
+            </div></div>
+          </div>
+          <div class="faq-item">
+            <button class="faq-question">Seiten-Licht <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li>Taste an der <strong style="color:#eee">Oberseite</strong> des Geräts</li>
+                <li class="sub-item">1× drücken → Weißes Licht</li>
+                <li class="sub-item">2× drücken → Gelbes Licht</li>
+                <li class="sub-item">3× drücken → Gemischtes Licht</li>
+                <li class="sub-item">4× drücken → Polizei-Beleuchtung</li>
+                <li class="sub-item">5× drücken → Aus</li>
+              </ul>
+            </div></div>
+          </div>
+        </div></div>
+      </div>
+
+      <div class="faq-section">
+        <button class="faq-section-btn">
+          <span class="faq-section-icon">🏋️</span>
+          <span class="faq-section-label">Geräte</span>
+          <span class="faq-section-chevron">▾</span>
+        </button>
+        <div class="faq-section-body"><div class="faq-section-inner">
+
+          <div class="faq-item">
+            <button class="faq-question">Hammer Ab &amp; Back Trainer <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li>Verstellbare Fußstütze: unten oder oben per <strong style="color:#eee">Metallstift</strong> einstecken</li>
+                <li class="sub-item">Stift unten → für <strong style="color:#eee">Hyperextensions</strong> (Rückenstrecker)</li>
+                <li class="sub-item">Stift oben → für <strong style="color:#eee">Sit-ups / Decline Sit-ups</strong> (Bauch)</li>
+                <li>Rückenteil per Pin in eine <strong style="color:#eee">schräge Position</strong> einstellen – je steiler, desto anspruchsvoller</li>
+                <li>Liegefläche höhenverstellbar – je tiefer desto schwerer</li>
+                <li>Heiße zusätzliche Nutzung: Wenn die Hantelbank belegt ist, können hier auch <strong style="color:#eee">Kurzhantelübungen</strong> (z.B. Curls, Schulterdrücken sitzend) ausgeführt werden</li>
+              </ul>
+              <div class="faq-tip">💡 Tipp: Für Decline Sit-ups Fußstütze hochklappen und Rückenteil schräg stellen – Details siehe Tab „Übungen“.</div>
+            </div></div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question">Hantelbank (Hammer, verstellbar) <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li><strong style="color:#eee">Sitzfläche:</strong> Mit dem Metallstift unter dem Sitz die Höhe einstellen und einrasten lassen</li>
+                <li><strong style="color:#eee">Rückenlehne:</strong> Lehne anheben, gewünschte Neigung (flach, schräg, senkrecht) wählen und einrasten lassen</li>
+                <li>Gummierte Füße sorgen für stabilen Stand; Rollen und Griff erleichtern das Verschieben</li>
+                <li>Ist die Bank belegt? Kurzhantelübungen können alternativ auf dem <strong style="color:#eee">Ab &amp; Back Trainer</strong> ausgeführt werden</li>
+              </ul>
+            </div></div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question">Kurzhanteln (verstellbar 4–28 kg) <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li>Gewichtsbereich: <strong style="color:#eee">4–28 kg</strong> pro Hantel, in <strong style="color:#eee">2 kg-Schritten</strong> schnell verstellbar</li>
+                <li>Einstellung: Griff links oder rechts drehen, bis das gewünschte Gewicht einrastet</li>
+                <li>Sicherung: Vor dem Herausnehmen immer prüfen, dass <strong style="color:#eee">alle Scheiben fest sitzen</strong></li>
+                <li>Nur in der <strong style="color:#eee">Ablage</strong> verstellen, nicht in der Luft drehen – lose Scheiben können herausfallen</li>
+              </ul>
+              <div class="faq-note">⚠️ Stelle die Hanteln immer komplett in die Aufnahme, bevor du das Gewicht veränderst.</div>
+            </div></div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question">Atletica R7 Rider Rack <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li><strong style="color:#eee">Lat- &amp; Ruderzug:</strong> Pin ins Gewichtsturm stecken, Griffe am Kabel wechseln – oben für Latzug, unten für Rudern</li>
+                <li><strong style="color:#eee">Griffe wechseln:</strong> Karabiner lösen, gewünschten Griff (Stange, D-Griff, Seil) einhängen</li>
+                <li><strong style="color:#eee">J-Hooks &amp; Safety Arms:</strong> höhenverstellbar – J-Hooks halten die Langhantel, Safety Arms fangen sie auf</li>
+                <li><strong style="color:#eee">Klimmzugstange:</strong> mehrere Griffvarianten (breit, eng, neutral)</li>
+                <li><strong style="color:#eee">Nordic Curls Setup:</strong> untere Latzug-Rolle so verstellen, dass sie knapp über dem Boden liegt, Unterlage/Polster unter die Knie legen, Fußspitzen unter die Rolle klemmen</li>
+              </ul>
+            </div></div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question">Kabelgriffe &amp; Zubehör <span class="faq-chevron">▾</span></button>
+            <div class="faq-answer"><div class="faq-answer-inner">
+              <ul>
+                <li><strong style="color:#eee">D-Griff:</strong> einarmige Curls, Seitheben, Rudern</li>
+                <li><strong style="color:#eee">Kurze Stange:</strong> gerade Stange für Bizeps-Curls und Trizeps-Pushdowns</li>
+                <li><strong style="color:#eee">Ergogriff:</strong> ergonomisch geformt, ideal für Latziehen und Rudern</li>
+                <li><strong style="color:#eee">Schlaufengriff/Seil:</strong> Face Pulls, Trizeps-Extension und kniende Kabel-Sit-ups</li>
+                <li>Alle Griffe lassen sich per Karabiner schnell am Kabelzug ein- und aushängen</li>
+              </ul>
+            </div></div>
+          </div>
+
+        </div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========== ÜBUNGEN (dynamisch aus data.js) ========== -->
+  <div class="tab-page" id="page-uebungen">
+    <div class="section-title">Übungen mit deinem Equipment</div>
+    <div id="uebungenDynamicWrap" class="faq-wrap"></div>
+  </div>
+
+</div>
+
+<div id="dayDetailModal"></div>
+
+<div class="app-footer-version font-mono" id="appFooterVersion" hidden>Kellerkraft · v1.15.15</div>
+
+<nav class="bottom-nav" id="bottomNav" aria-label="Hauptnavigation">
+  <button type="button" class="bottom-tab active" data-tab="home" aria-label="Übersicht">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
+    <span>Übersicht</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="training" aria-label="Training">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11"/><path d="M14 6h4v4"/><path d="M10 18H6v-4"/><path d="M18 10l-2-2"/><path d="M8 14l-2 2"/></svg>
+    <span>Training</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="reserve" aria-label="Reservieren">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    <span>Reserv.</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="uebungen" aria-label="Übungen">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+    <span>Übungen</span>
+  </button>
+  <button type="button" class="bottom-tab" data-tab="ausstattung" aria-label="Ausstattung">
+    <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    <span>Guide</span>
+  </button>
+</nav>
+
+</body>
+</html>

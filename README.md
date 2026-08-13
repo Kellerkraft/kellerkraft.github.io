@@ -24,35 +24,31 @@ In Firebase Auth: **Anonymous** + **E-Mail/Passwort** (Passwort-Anbieter, nicht 
 ## Projektstruktur
 
 ```
-├── index.html              Web-PWA (GitHub Pages) — Quelle der Wahrheit
+├── index.html              Website / PWA (GitHub Pages) — eigenstaendig
 ├── css/styles.css
 ├── database.rules.json
 ├── docs/
 ├── assets/
 ├── js/
-└── native/                 Capacitor iOS-Huelle (berührt Pages nicht)
-    ├── capacitor.config.json
-    ├── scripts/sync-web.mjs
-    ├── ios/                Xcode-Projekt (Build auf dem Mac)
-    └── www/                generiert (gitignore)
+└── native/                 iOS-App — komplett separater Strang
+    ├── app/                eigene App-Frontend-Quelle
+    ├── ios/                Xcode-Projekt
+    └── www/                Build-Output (gitignore)
 ```
 
 ## Aenderungen vornehmen
 
-- **Neue Uebung / Anleitung** → `js/data.js`
-- **Aussehen** → `css/styles.css`
-- **Firebase-Config** → `js/firebase.js`
-- **Auth-Flows** → `js/auth.js` + `js/auth-ui.js`
-- **Profil/Plan/Feed** → `js/growth.js` + `js/services/*`
-- **Neue Tabs** → `index.html` + `js/app.js` (`switchTab`)
-- **iOS-Shell** → `native/` (siehe `native/README.md`)
+- **Website:** Dateien im Repo-Root (`js/`, `css/`, `index.html`, …)
+- **iOS-App:** nur unter `native/` — siehe [`native/README.md`](native/README.md)
+- Die beiden Stränge teilen sich absichtlich **keinen** Live-Sync
 
 ## Deployment (GitHub Pages)
 
-1. Dateien im Repo-Root belassen (Struktur wie oben) — **nicht** aus `native/www` deployen
+1. Website-Dateien im Repo-Root belassen
 2. Settings → Pages → Branch `main` → `/ (root)`
-3. Nach Commit aktualisiert sich die Live-Seite automatisch
+3. `native/` wird von Pages nicht als App ausgeliefert; die Website bleibt die Website
 
-## iPhone / privater RC (spaeter App Store)
+## iPhone-App (separat)
 
-Capacitor-Shell liegt unter [`native/`](native/) und kopiert die Web-App nur nach `native/www` — die bestehende Web-Version bleibt unveraendert. Plan: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md). Kurz: [`native/README.md`](native/README.md).
+Schritte und Isolation: [`native/README.md`](native/README.md).  
+Gesamtplan TestFlight/Store: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md).

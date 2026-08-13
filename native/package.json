@@ -2,13 +2,14 @@
   "name": "kellerkraft-native",
   "private": true,
   "version": "1.0.0",
-  "description": "Capacitor iOS shell for Kellerkraft. Isolated from the GitHub Pages web PWA.",
+  "description": "Separate Capacitor iOS app. Website (repo root / GitHub Pages) is independent.",
   "scripts": {
-    "sync-web": "node ./scripts/sync-web.mjs",
-    "sync": "npm run sync-web && npx cap sync",
-    "sync:ios": "npm run sync-web && npx cap sync ios",
+    "build-www": "node ./scripts/build-www.mjs",
+    "sync": "npm run build-www && npx cap sync",
+    "sync:ios": "npm run build-www && npx cap sync ios",
     "open:ios": "npx cap open ios",
-    "add:ios": "npx cap add ios"
+    "add:ios": "npx cap add ios",
+    "import-from-web": "node ./scripts/import-from-web.mjs"
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
