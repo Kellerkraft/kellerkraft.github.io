@@ -57,3 +57,7 @@ In Firebase Auth: **Anonymous** + **E-Mail/Passwort** (Passwort-Anbieter, nicht 
 1. Dateien im Repo-Root belassen (Struktur wie oben)
 2. Settings → Pages → Branch `main` → `/ (root)`
 3. Nach Commit aktualisiert sich die Live-Seite automatisch
+
+## iPhone / privater RC (spaeter App Store)
+
+Die Web-PWA ist nicht direkt im App Store. Plan fuer privaten TestFlight-RC (Capacitor-Huelle) und spaeteren Store-Release: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md).
