@@ -135,6 +135,41 @@ export async function readCachedLastWorkout(key) {
   return row?.data || null;
 }
 
+/** Mirror active workout session (incl. in-progress sets) into IndexedDB for offline durability. */
+export async function cacheActiveSession(payload) {
+  const db = await openDb();
+  const tx = db.transaction(STORE_META, "readwrite");
+  await idbReq(tx.objectStore(STORE_META).put({
+    id: "activeSession",
+    data: payload || null,
+    updatedAt: Date.now()
+  }));
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
+export async function readCachedActiveSession() {
+  const db = await openDb();
+  const tx = db.transaction(STORE_META, "readonly");
+  const row = await idbReq(tx.objectStore(STORE_META).get("activeSession"));
+  db.close();
+  return row?.data || null;
+}
+
+export async function clearCachedActiveSession() {
+  const db = await openDb();
+  const tx = db.transaction(STORE_META, "readwrite");
+  await idbReq(tx.objectStore(STORE_META).delete("activeSession"));
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
+}
+
 /**
  * Apply a local log entry into the cached tree immediately (optimistic offline).
  */

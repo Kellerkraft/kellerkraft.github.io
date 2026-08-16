@@ -4,9 +4,13 @@
  */
 import { loadUserProfile, saveUserProfile } from "./services/users.js";
 import { addFeedEvent, getRecentFeed } from "./services/events.js";
-import { getUserStreak, getWeekTrainingDays } from "./services/logs.js";
+import { getUserStreak, getWeekTrainingDays, loadUserLogsTree } from "./services/logs.js";
+import { lastTrainedByBody, suggestNextSessionSplit } from "./data-model.js";
+import { EXERCISES } from "./data.js";
 import { getAuthSnapshot } from "./auth.js";
 import { trackEvent, trackError } from "./telemetry.js";
+
+const EXERCISE_BY_ID = Object.fromEntries(EXERCISES.map((ex) => [ex.id, ex]));
 
 function escapeAttr(s) {
   return String(s || "").replace(/"/g, "&quot;");
@@ -43,9 +47,12 @@ async function maybeAnnounceWeekAward(uid, user, avatar, weekDays, weekGoal) {
   return true;
 }
 
-function renderWeekAwardCard(weekDays, weekGoal) {
+function renderWeekAwardCard(weekDays, weekGoal, suggestion = null) {
   const earned = weekDays >= weekGoal;
   const pct = Math.min(100, Math.round((weekDays / Math.max(weekGoal, 1)) * 100));
+  const tip = suggestion?.text
+    ? `<div class="mvp-recovery-tip" role="note">${suggestion.text}</div>`
+    : "";
   if (earned) {
     return `
       <div class="mvp-award mvp-award--earned" role="status">
@@ -54,7 +61,8 @@ function renderWeekAwardCard(weekDays, weekGoal) {
           <div class="mvp-award-title">Wochenziel geschafft</div>
           <div class="mvp-award-sub">${weekDays} / ${weekGoal} Trainingstage diese Woche</div>
         </div>
-      </div>`;
+      </div>
+      ${tip}`;
   }
   return `
     <div class="mvp-award mvp-award--progress" role="status">
@@ -63,7 +71,8 @@ function renderWeekAwardCard(weekDays, weekGoal) {
         <div class="mvp-award-sub">${weekDays} / ${weekGoal} Trainingstage — noch ${Math.max(0, weekGoal - weekDays)} bis zur Auszeichnung</div>
       </div>
       <div class="mvp-award-bar" aria-hidden="true"><span style="width:${pct}%"></span></div>
-    </div>`;
+    </div>
+    ${tip}`;
 }
 
 /**
@@ -113,14 +122,22 @@ export async function renderGrowthSections(deps) {
   }
   user = user || profile.displayName || "";
 
-  const [streak, weekDays, feedItems] = await Promise.all([
+  const [streak, weekDays, feedItems, logsTree] = await Promise.all([
     getUserStreak(uid, user),
     getWeekTrainingDays(uid, user),
-    getRecentFeed()
+    getRecentFeed(),
+    loadUserLogsTree(uid, user)
   ]);
 
   const weekGoal = clampWeekGoal(profile.weekGoal || 3);
   const earned = weekDays >= weekGoal;
+  const recoverySuggestion = user
+    ? suggestNextSessionSplit({
+      weekDays,
+      weekGoal,
+      lastByBody: lastTrainedByBody(logsTree, EXERCISE_BY_ID)
+    })
+    : null;
 
   if (earned && user) {
     maybeAnnounceWeekAward(uid, user, profile.avatar, weekDays, weekGoal).catch(() => {});
@@ -142,9 +159,9 @@ export async function renderGrowthSections(deps) {
     </div>
 
     <div class="mvp-card">
-      <div class="mvp-title">Auszeichnung</div>
+      <div class="mvp-title">Wochenübersicht</div>
       ${user
-        ? renderWeekAwardCard(weekDays, weekGoal)
+        ? renderWeekAwardCard(weekDays, weekGoal, recoverySuggestion)
         : `<div class="sub">Zuerst einen Namen speichern, dann zählt das Wochenziel.</div>`}
     </div>
 

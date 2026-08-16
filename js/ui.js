@@ -49,7 +49,16 @@ export function applyTheme(theme) {
   const next = theme === "light" ? "light" : "dark";
   document.documentElement.setAttribute("data-theme", next);
   const btn = document.getElementById("themeToggleBtn");
-  if (btn) btn.textContent = next === "light" ? "☀️" : "🌙";
+  if (btn) {
+    const moon = btn.querySelector(".theme-toggle-icon--moon");
+    const sun = btn.querySelector(".theme-toggle-icon--sun");
+    if (moon && sun) {
+      moon.hidden = next === "light";
+      sun.hidden = next !== "light";
+    } else {
+      btn.textContent = next === "light" ? "☀️" : "🌙";
+    }
+  }
   const logo = document.getElementById("appLogo");
   if (logo) {
     logo.src = next === "light" ? "./assets/logo-mark-light.png" : "./assets/logo-mark-dark.png";

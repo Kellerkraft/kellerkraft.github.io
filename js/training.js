@@ -2,7 +2,7 @@ import { ref, get, set, remove, push } from "https://www.gstatic.com/firebasejs/
 import { db } from "./firebase.js";
 import { getAuthSnapshot } from "./auth.js";
 import { Paths, safeUserKey as modelSafeUserKey } from "./data-model.js";
-import { BODY_LABELS as DATA_BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC, GOAL_ORDER, GOAL_LABELS, GOAL_DESC, CARDIO_OPTIONS } from "./data.js";
+import { BODY_LABELS as DATA_BODY_LABELS, LEVEL_LABELS, LEVEL_ORDER, LEVEL_DESC, GOAL_ORDER, GOAL_LABELS, GOAL_DESC, CARDIO_OPTIONS, EQUIPMENT_TIPS } from "./data.js";
 import {
   isOnline,
   enqueueWrite,
@@ -11,6 +11,8 @@ import {
   readCachedLogTree,
   cacheLastWorkout,
   readCachedLastWorkout,
+  cacheActiveSession,
+  clearCachedActiveSession,
   syncPendingWrites,
   pendingCount,
   withTimeout
@@ -374,7 +376,7 @@ export function createTrainingModule(ctx = {}) {
       bar.classList.add("is-done");
       if (label) label.textContent = "Pause vorbei — nächster Satz";
       showToast("Pause beendet – nächster Satz!", "success", 2500);
-      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+      if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
     }
 
     function tick() {
@@ -547,6 +549,7 @@ export function createTrainingModule(ctx = {}) {
         savedAt: Date.now()
       };
       localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(payload));
+      void cacheActiveSession(payload);
     } catch {
       // ignore localStorage errors
     }
@@ -559,6 +562,7 @@ export function createTrainingModule(ctx = {}) {
     } catch {
       // ignore
     }
+    void clearCachedActiveSession();
     sessionOverridesReady = false;
     sessionPhase = "exercise";
     pendingRestoredSets = null;
@@ -885,6 +889,9 @@ export function createTrainingModule(ctx = {}) {
     if (isCardioStep(ex)) {
       return `${ex.minutes || 10} Min. ${ex.name} — Ort/Gerät vorbereiten.`;
     }
+    if (ex.id === "nordic") {
+      return "Latzug-Rolle tief · Matte unter Knie · Füße unter Rolle";
+    }
     const equip = Array.isArray(ex.equip) ? ex.equip : [];
     const hints = [];
     if (ex.rackSetting || ex.rackLabel) {
@@ -906,6 +913,29 @@ export function createTrainingModule(ctx = {}) {
       hints.push("Ab & Back Trainer einstellen");
     }
     return hints[0] || "Geräte kurz checken, dann starten.";
+  }
+
+  /** Format last session as watermark: "Letztes Mal: 24 kg × 10, 10, 8" */
+  function formatLastSessionBadge(last) {
+    if (!last) return "";
+    if (Array.isArray(last.sets) && last.sets.length) {
+      const weights = last.sets.map((s) => Number(s.weight));
+      const sameWeight = weights.every((w) => w === weights[0]);
+      const repsPart = last.sets.map((s) => s.reps).join(", ");
+      if (sameWeight) {
+        return `Letztes Mal: ${weights[0]} kg × ${repsPart}`;
+      }
+      return `Letztes Mal: ${last.sets.map((s) => `${s.weight}×${s.reps}`).join(" · ")}`;
+    }
+    if (last.weight != null && last.reps != null) {
+      return `Letztes Mal: ${last.weight} kg × ${last.reps}`;
+    }
+    return "";
+  }
+
+  function equipmentTipForExercise(ex) {
+    if (!ex?.id) return null;
+    return EQUIPMENT_TIPS[ex.id] || null;
   }
 
   function logRef(key, exId) { return ref(db, `gym/logs/${key}/${exId}`); }
@@ -2500,7 +2530,7 @@ export function createTrainingModule(ctx = {}) {
         clearInterval(restTimerInterval);
         display.textContent = "0:00";
         showToast("Pause beendet – weiter geht's!", "success", 2500);
-        if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
         setTimeout(() => renderTrainingExercise(), 600);
         return;
       }
@@ -2642,8 +2672,9 @@ export function createTrainingModule(ctx = {}) {
     const overrides = overridesForExerciseUi();
     const display = getExerciseDisplay(ex, overrides);
     const mediaHTML = renderExerciseMediaHtml(ex, overrides, { compact: true });
+    const equipTip = equipmentTipForExercise(ex);
     const instrHTML = display.steps.length ? `
-        <button id="toggleInstrBtn" class="exercise-details-toggle" style="margin-top:6px">📋 Anleitung anzeigen</button>
+        <button id="toggleInstrBtn" class="exercise-details-toggle" style="margin-top:6px">Anleitung anzeigen</button>
         <div id="instrBox" style="display:none;margin-top:10px;padding:12px;background:#0d0d0d;border-radius:8px">
           <ul style="margin:0;padding-left:18px;color:#ddd;line-height:1.6">
             ${display.steps.map(s => `<li>${s}</li>`).join("")}
@@ -2653,37 +2684,72 @@ export function createTrainingModule(ctx = {}) {
     const rackFieldHTML = ex.rackSetting ? `
         <div style="margin-top:12px">
           <div class="field-label">${ex.rackLabel || "Rack-Einstellung"} (Stufe)</div>
-          <input type="number" step="1" id="logRackSetting" class="time-input" placeholder="z.B. 5">
+          <input type="number" step="1" id="logRackSetting" class="time-input" placeholder="z.B. 5" inputmode="numeric">
         </div>` : "";
+    const equipInfoBtn = equipTip
+      ? `<button type="button" id="equipTipBtn" class="equip-tip-btn" aria-label="Gerätehinweis: ${equipTip.title}" aria-expanded="false" title="${equipTip.title}">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        </button>`
+      : "";
     document.body.classList.add("workout-session-active");
     const setsLabel = ex.mesoTargetSets ? `Sätze <span style="color:var(--text-dim);font-weight:400">(Soll: ${ex.mesoTargetSets})</span>` : "Sätze";
-    wrap.innerHTML = `<div class="upcoming-wrap" style="margin-bottom:0;border-bottom:none;border-radius:var(--radius-md) var(--radius-md) 0 0">
+    wrap.innerHTML = `<div class="upcoming-wrap workout-ex-card" style="margin-bottom:0;border-bottom:none;border-radius:var(--radius-md) var(--radius-md) 0 0">
         <div class="upcoming-title">${BODY_LABELS[ex.body]}</div>
-        <div class="exercise-session-name">${display.name}</div>
+        <div class="exercise-session-head">
+          <div class="exercise-session-name">${display.name}</div>
+          ${equipInfoBtn}
+        </div>
+        ${equipTip ? `<div id="equipTipPopover" class="equip-tip-popover" hidden>
+          <div class="equip-tip-popover-title">${equipTip.title}</div>
+          <div class="equip-tip-popover-body">${equipTip.html || ""}</div>
+          ${equipTip.faqId ? `<button type="button" class="equip-tip-open-guide" data-faq="${equipTip.faqId}">Vollständige Anleitung öffnen</button>` : ""}
+        </div>` : ""}
+        <div class="last-session-badge" id="lastSessionBadge" hidden></div>
         <div class="exercise-reco-slot" id="recoNote">Lade letzten Wert…</div>
         ${mesoBannerHtml(ex)}
         <div class="field-label" style="margin-bottom:4px">${setsLabel}</div>
         <div id="setsList" class="sets-list-compact"></div>
-        <div class="input-row-3col">
-          <div><div class="field-label">Gewicht</div><input type="number" step="0.5" id="logWeight" class="time-input" placeholder="kg"></div>
-          <div><div class="field-label">Wdh.</div><input type="number" id="logReps" class="time-input" placeholder="10"></div>
-          <div><div class="field-label">RIR${ex.mesoTargetRirMin != null ? ` (${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax})` : ""}</div><input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : "2"}" value="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : ""}"></div>
-        </div>
         <button id="toggleDetailsBtn" class="exercise-details-toggle">▸ Mehr (Anleitung, Zielbereich, Media)</button>
         <div id="exerciseDetailsCollapsible" class="exercise-details-collapsible">
           ${mediaHTML}
           <div class="time-grid" style="margin-top:10px">
-            <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}"></div>
-            <div><div class="field-label">Ziel max. Wdh.</div><input type="number" id="logMax" class="time-input" placeholder="${ex.defMax}"></div>
+            <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}" inputmode="numeric"></div>
+            <div><div class="field-label">Ziel max. Wdh.</div><input type="number" id="logMax" class="time-input" placeholder="${ex.defMax}" inputmode="numeric"></div>
+          </div>
+          <div style="margin-top:10px">
+            <div class="field-label">RIR${ex.mesoTargetRirMin != null ? ` (${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax})` : ""}</div>
+            <input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : "2"}" value="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : ""}" inputmode="numeric">
           </div>
           ${rackFieldHTML}
           ${instrHTML ? `<div style="margin-top:10px">${instrHTML}</div>` : ""}
         </div>
       </div>
-      <div class="workout-action-bar" id="workoutActionBar">
-        <button id="addSetBtn" class="btn-session-primary">+ Satz loggen</button>
-        <button id="doneExBtn" class="btn-session-secondary">Fertig</button>
-        <button id="skipExBtn" class="btn-session-secondary">Skip</button>
+      <div class="workout-action-bar workout-action-bar--thumb" id="workoutActionBar">
+        <div class="set-input-dock">
+          <div class="set-adj-group">
+            <div class="field-label">Gewicht</div>
+            <div class="set-adj-row">
+              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="-2.5" aria-label="Gewicht −2,5 kg">−2.5</button>
+              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="-1" aria-label="Gewicht −1 kg">−1</button>
+              <input type="number" step="0.5" id="logWeight" class="time-input set-adj-input" placeholder="kg" inputmode="decimal">
+              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="1" aria-label="Gewicht +1 kg">+1</button>
+              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="2.5" aria-label="Gewicht +2,5 kg">+2.5</button>
+            </div>
+          </div>
+          <div class="set-adj-group">
+            <div class="field-label">Wdh.</div>
+            <div class="set-adj-row">
+              <button type="button" class="set-adj-btn" data-adj="reps" data-delta="-1" aria-label="Wiederholungen −1">−1</button>
+              <input type="number" id="logReps" class="time-input set-adj-input" placeholder="10" inputmode="numeric">
+              <button type="button" class="set-adj-btn" data-adj="reps" data-delta="1" aria-label="Wiederholungen +1">+1</button>
+            </div>
+          </div>
+        </div>
+        <button id="addSetBtn" class="btn-session-primary btn-complete-set">Satz abschließen</button>
+        <div class="workout-action-secondary">
+          <button id="doneExBtn" class="btn-session-secondary">Fertig</button>
+          <button id="skipExBtn" class="btn-session-secondary">Skip</button>
+        </div>
       </div>
       <button id="abandonTrainingBtn" class="owner-link" style="margin-top:8px;display:block;width:100%;text-align:center;padding-bottom:env(safe-area-inset-bottom, 8px)">Training abbrechen</button>`;
 
@@ -2701,7 +2767,33 @@ export function createTrainingModule(ctx = {}) {
         const btn = document.getElementById("toggleInstrBtn");
         const isHidden = box.style.display === "none";
         box.style.display = isHidden ? "block" : "none";
-        btn.textContent = isHidden ? "📋 Anleitung ausblenden" : "📋 Anleitung anzeigen";
+        btn.textContent = isHidden ? "Anleitung ausblenden" : "Anleitung anzeigen";
+      });
+    }
+
+    if (equipTip) {
+      const tipBtn = document.getElementById("equipTipBtn");
+      const pop = document.getElementById("equipTipPopover");
+      tipBtn?.addEventListener("click", () => {
+        const open = pop.hasAttribute("hidden");
+        if (open) pop.removeAttribute("hidden");
+        else pop.setAttribute("hidden", "");
+        tipBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      pop?.querySelector(".equip-tip-open-guide")?.addEventListener("click", () => {
+        const faqId = equipTip.faqId;
+        saveActiveSession();
+        document.body.classList.remove("workout-session-active");
+        const tabBtn = document.querySelector(`.bottom-tab[data-tab="ausstattung"]`);
+        tabBtn?.click();
+        requestAnimationFrame(() => {
+          const item = document.querySelector(`[data-equip-tip="${faqId}"]`);
+          if (!item) return;
+          const section = item.closest(".faq-section");
+          section?.classList.add("open");
+          item.classList.add("open");
+          item.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
       });
     }
 
@@ -2736,10 +2828,45 @@ export function createTrainingModule(ctx = {}) {
     }
     renderSetsList();
 
+    const updatePrimaryLabel = () => {
+      const btn = document.getElementById("addSetBtn");
+      if (!btn) return;
+      const w = document.getElementById("logWeight")?.value;
+      const r = document.getElementById("logReps")?.value;
+      if (w && r) {
+        btn.textContent = `Satz abschließen · ${w} kg × ${r}`;
+      } else {
+        btn.textContent = "Satz abschließen";
+      }
+    };
+
+    function nudgeInput(kind, delta) {
+      const el = document.getElementById(kind === "weight" ? "logWeight" : "logReps");
+      if (!el) return;
+      const step = kind === "weight" ? 0.5 : 1;
+      const cur = parseFloat(el.value);
+      const base = Number.isFinite(cur) ? cur : 0;
+      let next = Math.round((base + delta) / step) * step;
+      if (kind === "reps") next = Math.max(0, Math.round(next));
+      else next = Math.max(0, Math.round(next * 10) / 10);
+      el.value = String(next);
+      updatePrimaryLabel();
+      if (navigator.vibrate) navigator.vibrate(12);
+    }
+
+    wrap.querySelectorAll(".set-adj-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const adj = btn.dataset.adj;
+        const delta = parseFloat(btn.dataset.delta);
+        if (!adj || !Number.isFinite(delta)) return;
+        nudgeInput(adj, delta);
+      });
+    });
+
     document.getElementById("addSetBtn").addEventListener("click", () => {
       const weight = parseFloat(document.getElementById("logWeight").value) || 0;
       const reps = parseInt(document.getElementById("logReps").value) || 0;
-      const rirRaw = document.getElementById("logRir").value;
+      const rirRaw = document.getElementById("logRir")?.value ?? "";
       const rir = rirRaw !== "" ? parseInt(rirRaw) : null;
       if (reps <= 0) {
         showToast("Bitte Wiederholungen für den Satz eingeben.", "error", 2200);
@@ -2747,7 +2874,7 @@ export function createTrainingModule(ctx = {}) {
       }
       currentSets.push({ weight, reps, rir });
       renderSetsList();
-      let toastMsg = `Satz ${currentSets.length} hinzugefügt.`;
+      let toastMsg = `Satz ${currentSets.length} gespeichert.`;
       if (ex.mesoTargetSets) {
         if (currentSets.length === ex.mesoTargetSets) {
           toastMsg = `Soll erreicht (${ex.mesoTargetSets} Sätze).`;
@@ -2761,21 +2888,11 @@ export function createTrainingModule(ctx = {}) {
         }
       }
       showToast(toastMsg, "success", 1600);
+      if (navigator.vibrate) navigator.vibrate(30);
       saveActiveSession();
       startSetRestTimer({ setNumber: currentSets.length });
     });
 
-    const updatePrimaryLabel = () => {
-      const btn = document.getElementById("addSetBtn");
-      if (!btn) return;
-      const w = document.getElementById("logWeight")?.value;
-      const r = document.getElementById("logReps")?.value;
-      if (w && r) {
-        btn.textContent = `+ ${w}kg × ${r}`;
-      } else {
-        btn.textContent = "+ Satz loggen";
-      }
-    };
     document.getElementById("logWeight")?.addEventListener("input", updatePrimaryLabel);
     document.getElementById("logReps")?.addEventListener("input", updatePrimaryLabel);
 
@@ -2791,7 +2908,7 @@ export function createTrainingModule(ctx = {}) {
       // Falls im letzten Feld noch ein Satz steht, der nicht per "+ Satz hinzufügen" gespeichert wurde, automatisch übernehmen
       const pendingWeight = parseFloat(document.getElementById("logWeight").value) || 0;
       const pendingReps = parseInt(document.getElementById("logReps").value) || 0;
-      const pendingRirRaw = document.getElementById("logRir").value;
+      const pendingRirRaw = document.getElementById("logRir")?.value ?? "";
       const pendingRir = pendingRirRaw !== "" ? parseInt(pendingRirRaw) : null;
       if (pendingReps > 0 && (!currentSets.length || currentSets[currentSets.length-1].reps !== pendingReps || currentSets[currentSets.length-1].weight !== pendingWeight)) {
         const lastSet = currentSets[currentSets.length-1];
@@ -2875,9 +2992,17 @@ export function createTrainingModule(ctx = {}) {
 
     void getLastLog(readKey() || writeKey(), ex.id).then((last) => {
       const recoEl = document.getElementById("recoNote");
+      const badgeEl = document.getElementById("lastSessionBadge");
       if (!recoEl) return;
+      const badge = formatLastSessionBadge(last);
+      if (badgeEl && badge) {
+        badgeEl.hidden = false;
+        badgeEl.textContent = badge;
+      }
       const reco = computeRecommendation(last, ex);
-      recoEl.innerHTML = reco.note + (reco.weight ? `<br><strong style="color:#cdf94a">Empfehlung: ${reco.weight} kg × ${reco.reps} Wdh.</strong>` : `<br><strong style="color:#cdf94a">Empfehlung: ${reco.reps} Wdh. (Gewicht selbst wählen)</strong>`);
+      recoEl.innerHTML = reco.note + (reco.weight
+        ? `<br><strong class="reco-target">Ziel jetzt: ${reco.weight} kg × ${reco.reps} Wdh.</strong>`
+        : `<br><strong class="reco-target">Ziel jetzt: ${reco.reps} Wdh. (Gewicht selbst wählen)</strong>`);
       const weightEl = document.getElementById("logWeight");
       const repsEl = document.getElementById("logReps");
       const minEl = document.getElementById("logMin");
@@ -2890,6 +3015,7 @@ export function createTrainingModule(ctx = {}) {
         const rackInput = document.getElementById("logRackSetting");
         if (rackInput) rackInput.value = (last && last.rackSetting != null) ? last.rackSetting : "";
       }
+      updatePrimaryLabel();
     }).catch(() => {
       const recoEl = document.getElementById("recoNote");
       if (recoEl) recoEl.textContent = "Keine Empfehlung verfügbar (offline).";

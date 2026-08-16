@@ -282,6 +282,103 @@ export function trainingDaysThisWeek(logsTree) {
   return daySet.size;
 }
 
+const MS_DAY = 86400000;
+const RECOVERY_MS = 48 * 3600000; // ~48h
+
+/**
+ * Last log timestamp per body area.
+ * @param {object} logsTree
+ * @param {Record<string, {body?: string}>} exerciseById
+ * @returns {Record<string, number>}
+ */
+export function lastTrainedByBody(logsTree, exerciseById = {}) {
+  const out = {};
+  Object.entries(logsTree || {}).forEach(([exId, entries]) => {
+    const body = exerciseById[exId]?.body;
+    if (!body) return;
+    const list = Array.isArray(entries) ? entries : Object.values(entries || {});
+    list.forEach((entry) => {
+      const t = Number(entry?.date) || 0;
+      if (!t) return;
+      if (!out[body] || t > out[body]) out[body] = t;
+    });
+  });
+  return out;
+}
+
+/**
+ * Suggest next upper/lower session from remaining week days + ~48h recovery.
+ * @param {{ weekDays: number, weekGoal: number, lastByBody: Record<string, number>, now?: number }} opts
+ * @returns {{ text: string, split: "upper"|"lower"|"either"|null } | null}
+ */
+export function suggestNextSessionSplit(opts = {}) {
+  const weekDays = Number(opts.weekDays) || 0;
+  const weekGoal = Math.max(1, Number(opts.weekGoal) || 3);
+  const lastByBody = opts.lastByBody || {};
+  const now = opts.now != null ? opts.now : Date.now();
+
+  const remainingGoal = Math.max(0, weekGoal - weekDays);
+  const today = new Date(now);
+  const dayIdx = (today.getDay() + 6) % 7; // Mon=0
+  const daysLeftInclToday = 7 - dayIdx;
+
+  const lastUpper = Math.max(
+    0,
+    ...["brust", "ruecken", "arme"].map((b) => lastByBody[b] || 0)
+  );
+  const lastLower = lastByBody.beine || 0;
+  const upperReady = !lastUpper || now - lastUpper >= RECOVERY_MS;
+  const lowerReady = !lastLower || now - lastLower >= RECOVERY_MS;
+  const hoursUntil = (ts) => Math.max(0, Math.ceil((RECOVERY_MS - (now - ts)) / 3600000));
+
+  if (remainingGoal <= 0) {
+    return {
+      split: null,
+      text: `Wochenziel erreicht (${weekDays}/${weekGoal}). Rest-Day ok — oder lockere Technik/Bauch.`
+    };
+  }
+
+  const fmtWhen = (hours) => {
+    if (hours <= 0) return "heute";
+    if (hours <= 12) return `in ~${hours} Std.`;
+    const days = Math.ceil(hours / 24);
+    if (days === 1) return "morgen";
+    return `in ${days} Tagen`;
+  };
+
+  if (upperReady && lowerReady) {
+    const preferLower = lastLower && lastUpper && lastLower < lastUpper;
+    const split = preferLower ? "lower" : "upper";
+    const label = split === "lower" ? "Unterkörper" : "Oberkörper";
+    return {
+      split,
+      text: `Noch ${remainingGoal} von ${weekGoal} Einheiten · ideal heute: ${label} (beide Splits erholt, ${daysLeftInclToday} Tage bis So).`
+    };
+  }
+
+  if (upperReady && !lowerReady) {
+    return {
+      split: "upper",
+      text: `Noch ${remainingGoal}/${weekGoal} · heute Oberkörper. Unterkörper wieder ${fmtWhen(hoursUntil(lastLower))} (~48h Regenerationszeit).`
+    };
+  }
+
+  if (lowerReady && !upperReady) {
+    return {
+      split: "lower",
+      text: `Noch ${remainingGoal}/${weekGoal} · heute Unterkörper. Oberkörper wieder ${fmtWhen(hoursUntil(lastUpper))} (~48h Regenerationszeit).`
+    };
+  }
+
+  const nextUpperH = hoursUntil(lastUpper);
+  const nextLowerH = hoursUntil(lastLower);
+  const nextIsLower = nextLowerH <= nextUpperH;
+  return {
+    split: nextIsLower ? "lower" : "upper",
+    text: `Beide Splits noch in Regeneration. Nächste Einheit: ${nextIsLower ? "Unterkörper" : "Oberkörper"} ${fmtWhen(Math.min(nextUpperH, nextLowerH))} · noch ${remainingGoal}/${weekGoal} diese Woche.`
+  };
+}
+
 /**
  * Resolve effective role string; missing entry → member.
  */

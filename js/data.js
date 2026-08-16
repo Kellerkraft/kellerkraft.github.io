@@ -297,6 +297,114 @@ export const EXERCISES = [
 ];
 
 export const BODY_LABELS = { beine:"Beine & Po", bauch:"Bauch & Core", ruecken:"Rücken & Lat", arme:"Arme & Schultern", brust:"Brust" };
+
+/**
+ * Equipment / setup tips linked from workout mode (Ausstattung & Bedienung).
+ * `faqId` matches data-equip-tip on Ausstattung accordion items.
+ */
+export const EQUIPMENT_TIPS = {
+  nordic: {
+    faqId: "equip-rack-nordic",
+    title: "Nordic Curls — Latzug-Setup",
+    html: `<ul>
+      <li>Untere Latzug-Rolle so verstellen, dass sie knapp über dem Boden liegt</li>
+      <li>Unterlage/Polster unter die Knie legen</li>
+      <li>Fußspitzen fest unter die Rolle klemmen</li>
+    </ul>
+    <div class="faq-note">Sehr intensive Beinbeuger-Übung — anfangs wenige Wdh., langsam absenken.</div>`
+  },
+  hyperext: {
+    faqId: "equip-abback",
+    title: "Hyperextensions — Ab &amp; Back Trainer",
+    html: `<ul>
+      <li>Fußstütze <strong>unten</strong> per Metallstift einstecken</li>
+      <li>Rückenteil schräg einstellen — je steiler, desto schwerer</li>
+    </ul>`
+  },
+  declinesitup: {
+    faqId: "equip-abback",
+    title: "Decline Sit-ups — Ab &amp; Back Trainer",
+    html: `<ul>
+      <li>Fußstütze <strong>hochklappen</strong> (Stift oben)</li>
+      <li>Rückenteil schräg stellen</li>
+    </ul>
+    <div class="faq-tip">💡 Je steiler die Neigung, desto anspruchsvoller.</div>`
+  },
+  weightedsitup: {
+    faqId: "equip-abback",
+    title: "Weighted Sit-up — Ab &amp; Back Trainer",
+    html: `<ul>
+      <li>Fußstütze oben einstellen</li>
+      <li>Kurzhantel vor der Brust halten</li>
+    </ul>`
+  },
+  backsquat: {
+    faqId: "equip-rack-nordic",
+    title: "Barbell Back Squat — Rack",
+    html: `<ul>
+      <li>J-Hooks auf Schulterhöhe, Safety Arms passend zur Tiefe</li>
+      <li>Stange aus den Hooks heben, einen Schritt zurücktreten</li>
+    </ul>`
+  },
+  jammerbrust: {
+    faqId: "equip-rack-nordic",
+    title: "Brustpresse — Jammer Arme",
+    html: `<ul>
+      <li>Jammer Arme auf niedrige Höhe einstellen</li>
+      <li>Stufe in der Notiz / Rack-Feld mitloggen</li>
+    </ul>`
+  },
+  jammerschulter: {
+    faqId: "equip-rack-nordic",
+    title: "Schulterdrücken — Jammer Arme",
+    html: `<ul>
+      <li>Jammer Arme auf Schulterhöhe einstellen</li>
+    </ul>`
+  },
+  jammerinclinebrust: {
+    faqId: "equip-rack-nordic",
+    title: "Incline Brustpresse — Jammer Arme",
+    html: `<ul>
+      <li>Jammer Arme mittlere Höhe, Schrägbank 30°/45°</li>
+    </ul>`
+  },
+  jammerarme: {
+    faqId: "equip-rack-nordic",
+    title: "Jammer Arme",
+    html: `<ul>
+      <li>Höhe passend zur Übung einstellen und Stufe notieren</li>
+    </ul>`
+  },
+  khbankdruecken: {
+    faqId: "equip-dumbbells",
+    title: "Kurzhanteln",
+    html: `<ul>
+      <li>Gewicht nur in der Ablage verstellen (2-kg-Schritte)</li>
+      <li>Vor dem Herausnehmen: alle Scheiben fest sitzen</li>
+    </ul>
+    <div class="faq-note">⚠️ Nie in der Luft drehen — lose Scheiben können herausfallen.</div>`
+  },
+  khcurl: { faqId: "equip-dumbbells", title: "Kurzhanteln", html: null },
+  khflyes: { faqId: "equip-dumbbells", title: "Kurzhanteln", html: null },
+  schulterdruecken: { faqId: "equip-dumbbells", title: "Kurzhanteln", html: null },
+  inclinebench: { faqId: "equip-dumbbells", title: "Kurzhanteln", html: null },
+  pullover: { faqId: "equip-dumbbells", title: "Kurzhanteln", html: null },
+  khrudern: { faqId: "equip-dumbbells", title: "Kurzhanteln", html: null }
+};
+
+// Share dumbbell tip HTML for all KH exercises
+["khcurl", "khflyes", "schulterdruecken", "inclinebench", "pullover", "khrudern"].forEach((id) => {
+  if (EQUIPMENT_TIPS[id] && !EQUIPMENT_TIPS[id].html) {
+    EQUIPMENT_TIPS[id].html = EQUIPMENT_TIPS.khbankdruecken.html;
+  }
+});
+
+/** Upper / lower split for ~48h recovery suggestions */
+export const BODY_SPLIT = Object.freeze({
+  upper: ["brust", "ruecken", "arme"],
+  lower: ["beine"],
+  core: ["bauch"]
+});
 export const LEVEL_LABELS = { easy:"Einfach", mid:"Mittel", advanced:"Fortgeschritten" };
 export const LEVEL_ORDER = ["easy","mid","advanced"];
 export const LEVEL_DESC = {
