@@ -1261,8 +1261,11 @@ textarea.input, textarea.name-input { height: auto; min-height: 96px; padding: 1
 }
 
 html[data-theme="light"] .workout-action-bar { background: var(--bg); border-top-color: var(--border); }
-html[data-theme="light"] .workout-action-bar .btn-session-primary { color: #fff; }
+html[data-theme="light"] .workout-action-bar .btn-session-primary { color: #0a0a0a; }
 html[data-theme="light"] .exercise-reco-slot { color: var(--text-muted); }
+html[data-theme="light"] .last-session-badge { color: var(--text-muted); border-color: var(--border); }
+html[data-theme="light"] .mvp-recovery-tip { color: var(--text-secondary); }
+html[data-theme="light"] .set-adj-btn { background: var(--bg-input); }
 html[data-theme="light"] .sets-list-compact .set-chip { background: var(--bg-input); border-color: var(--border-soft); }
 html[data-theme="light"] .sets-list-compact .set-chip strong { color: var(--accent); }
 
