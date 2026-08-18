@@ -762,8 +762,13 @@ export function createTrainingModule(ctx = {}) {
     const goal = selectedGoal || "muskelaufbau";
     const allowedLevels = levelsUpTo(selectedLevel || "advanced");
     const all = getAllExercises();
-    let pool = all.filter(e => selectedBody.has(e.body) && allowedLevels.includes(e.level));
-    if (pool.length === 0) pool = all.filter(e => allowedLevels.includes(e.level));
+    const aiEligible = (e) => {
+      const equip = Array.isArray(e?.equip) ? e.equip : [];
+      // Jammer exercises stay manual-only until dedicated clustering support exists.
+      return !equip.includes("jammer");
+    };
+    let pool = all.filter((e) => selectedBody.has(e.body) && allowedLevels.includes(e.level) && aiEligible(e));
+    if (pool.length === 0) pool = all.filter((e) => allowedLevels.includes(e.level) && aiEligible(e));
     const count = Math.min(exercisesPerDuration(selectedDuration), pool.length || 1);
 
     const scored = pool.map((e) => ({ e, score: scoreExerciseForGoal(e, goal) }));
