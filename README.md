@@ -24,36 +24,27 @@ In Firebase Auth: **Anonymous** + **E-Mail/Passwort** (Passwort-Anbieter, nicht 
 ## Projektstruktur
 
 ```
-├── index.html
-├── css/styles.css
-├── database.rules.json
-├── docs/data-model-v2.md
-├── assets/                 PWA-Icons, Body-Icons, Uebungsmedien
-└── js/
-    ├── app.js              Orchestrator (Boot, Home/Check-in, Nav)
-    ├── firebase.js         Firebase App / DB / Auth
-    ├── auth.js / auth-ui.js
-    ├── telemetry.js
-    ├── growth.js           Profil, Wochenziel-Auszeichnung, Streaks, Feed-UI
-    ├── reservations.js
-    ├── exercises.js
-    ├── training.js
-    ├── ui.js / state.js
-    ├── data.js / data-model.js
-    └── services/           users, plans, events, logs, roles, schema
+├── index.html              Website / PWA — Quelle der Wahrheit
+├── css/ / js/ / assets/
+├── docs/
+└── native/                 iOS-Huelle (uebernimmt Website beim Sync)
+    ├── scripts/build-www.mjs
+    ├── ios/
+    └── www/                generiert aus Website (gitignore)
 ```
 
 ## Aenderungen vornehmen
 
-- **Neue Uebung / Anleitung** → `js/data.js`
-- **Aussehen** → `css/styles.css`
-- **Firebase-Config** → `js/firebase.js`
-- **Auth-Flows** → `js/auth.js` + `js/auth-ui.js`
-- **Profil/Plan/Feed** → `js/growth.js` + `js/services/*`
-- **Neue Tabs** → `index.html` + `js/app.js` (`switchTab`)
+- **Produkt/UI:** im Repo-Root (Website). Die iOS-App folgt mit `cd native && npm run sync:ios`.
+- **Nur iOS-Huelle (Signing, Icons, …):** `native/ios/` — siehe [`native/README.md`](native/README.md)
 
 ## Deployment (GitHub Pages)
 
-1. Dateien im Repo-Root belassen (Struktur wie oben)
+1. Website-Dateien im Repo-Root belassen
 2. Settings → Pages → Branch `main` → `/ (root)`
-3. Nach Commit aktualisiert sich die Live-Seite automatisch
+3. `native/` aendert die ausgelieferte Website nicht
+
+## iPhone-App
+
+Website führt, App folgt: [`native/README.md`](native/README.md).  
+Plan TestFlight/Store: [`docs/ios-private-rc-plan.md`](docs/ios-private-rc-plan.md).

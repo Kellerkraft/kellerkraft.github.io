@@ -1,0 +1,20 @@
+{
+  "name": "kellerkraft-native",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Capacitor iOS shell. Website (repo root) leads; app copies it on sync.",
+  "scripts": {
+    "build-www": "node ./scripts/build-www.mjs",
+    "sync": "npm run build-www && npx cap sync",
+    "sync:ios": "npm run build-www && npx cap sync ios",
+    "open:ios": "npx cap open ios",
+    "add:ios": "npx cap add ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.4.3",
+    "@capacitor/ios": "^7.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}
