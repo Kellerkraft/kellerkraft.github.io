@@ -2709,47 +2709,26 @@ export function createTrainingModule(ctx = {}) {
         ${mesoBannerHtml(ex)}
         <div class="field-label" style="margin-bottom:4px">${setsLabel}</div>
         <div id="setsList" class="sets-list-compact"></div>
+        <div class="input-row-3col">
+          <div><div class="field-label">Gewicht</div><input type="number" step="0.5" id="logWeight" class="time-input" placeholder="kg"></div>
+          <div><div class="field-label">Wdh.</div><input type="number" id="logReps" class="time-input" placeholder="10"></div>
+          <div><div class="field-label">RIR${ex.mesoTargetRirMin != null ? ` (${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax})` : ""}</div><input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : "2"}" value="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : ""}"></div>
+        </div>
         <button id="toggleDetailsBtn" class="exercise-details-toggle">▸ Mehr (Anleitung, Zielbereich, Media)</button>
         <div id="exerciseDetailsCollapsible" class="exercise-details-collapsible">
           ${mediaHTML}
           <div class="time-grid" style="margin-top:10px">
-            <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}" inputmode="numeric"></div>
-            <div><div class="field-label">Ziel max. Wdh.</div><input type="number" id="logMax" class="time-input" placeholder="${ex.defMax}" inputmode="numeric"></div>
-          </div>
-          <div style="margin-top:10px">
-            <div class="field-label">RIR${ex.mesoTargetRirMin != null ? ` (${ex.mesoTargetRirMin}–${ex.mesoTargetRirMax})` : ""}</div>
-            <input type="number" min="0" max="5" id="logRir" class="time-input" placeholder="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : "2"}" value="${ex.mesoTargetRirMin != null ? ex.mesoTargetRirMin : ""}" inputmode="numeric">
+            <div><div class="field-label">Ziel min. Wdh.</div><input type="number" id="logMin" class="time-input" placeholder="${ex.defMin}"></div>
+            <div><div class="field-label">Ziel max. Wdh.</div><input type="number" id="logMax" class="time-input" placeholder="${ex.defMax}"></div>
           </div>
           ${rackFieldHTML}
           ${instrHTML ? `<div style="margin-top:10px">${instrHTML}</div>` : ""}
         </div>
       </div>
-      <div class="workout-action-bar workout-action-bar--thumb" id="workoutActionBar">
-        <div class="set-input-dock">
-          <div class="set-adj-group">
-            <div class="field-label">Gewicht</div>
-            <div class="set-adj-row">
-              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="-2.5" aria-label="Gewicht −2,5 kg">−2.5</button>
-              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="-1" aria-label="Gewicht −1 kg">−1</button>
-              <input type="number" step="0.5" id="logWeight" class="time-input set-adj-input" placeholder="kg" inputmode="decimal">
-              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="1" aria-label="Gewicht +1 kg">+1</button>
-              <button type="button" class="set-adj-btn" data-adj="weight" data-delta="2.5" aria-label="Gewicht +2,5 kg">+2.5</button>
-            </div>
-          </div>
-          <div class="set-adj-group">
-            <div class="field-label">Wdh.</div>
-            <div class="set-adj-row">
-              <button type="button" class="set-adj-btn" data-adj="reps" data-delta="-1" aria-label="Wiederholungen −1">−1</button>
-              <input type="number" id="logReps" class="time-input set-adj-input" placeholder="10" inputmode="numeric">
-              <button type="button" class="set-adj-btn" data-adj="reps" data-delta="1" aria-label="Wiederholungen +1">+1</button>
-            </div>
-          </div>
-        </div>
-        <button id="addSetBtn" class="btn-session-primary btn-complete-set">Satz abschließen</button>
-        <div class="workout-action-secondary">
-          <button id="doneExBtn" class="btn-session-secondary">Fertig</button>
-          <button id="skipExBtn" class="btn-session-secondary">Skip</button>
-        </div>
+      <div class="workout-action-bar" id="workoutActionBar">
+        <button id="addSetBtn" class="btn-session-primary">+ Satz loggen</button>
+        <button id="doneExBtn" class="btn-session-secondary">Fertig</button>
+        <button id="skipExBtn" class="btn-session-secondary">Skip</button>
       </div>
       <button id="abandonTrainingBtn" class="owner-link" style="margin-top:8px;display:block;width:100%;text-align:center;padding-bottom:env(safe-area-inset-bottom, 8px)">Training abbrechen</button>`;
 
@@ -2828,41 +2807,6 @@ export function createTrainingModule(ctx = {}) {
     }
     renderSetsList();
 
-    const updatePrimaryLabel = () => {
-      const btn = document.getElementById("addSetBtn");
-      if (!btn) return;
-      const w = document.getElementById("logWeight")?.value;
-      const r = document.getElementById("logReps")?.value;
-      if (w && r) {
-        btn.textContent = `Satz abschließen · ${w} kg × ${r}`;
-      } else {
-        btn.textContent = "Satz abschließen";
-      }
-    };
-
-    function nudgeInput(kind, delta) {
-      const el = document.getElementById(kind === "weight" ? "logWeight" : "logReps");
-      if (!el) return;
-      const step = kind === "weight" ? 0.5 : 1;
-      const cur = parseFloat(el.value);
-      const base = Number.isFinite(cur) ? cur : 0;
-      let next = Math.round((base + delta) / step) * step;
-      if (kind === "reps") next = Math.max(0, Math.round(next));
-      else next = Math.max(0, Math.round(next * 10) / 10);
-      el.value = String(next);
-      updatePrimaryLabel();
-      if (navigator.vibrate) navigator.vibrate(12);
-    }
-
-    wrap.querySelectorAll(".set-adj-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const adj = btn.dataset.adj;
-        const delta = parseFloat(btn.dataset.delta);
-        if (!adj || !Number.isFinite(delta)) return;
-        nudgeInput(adj, delta);
-      });
-    });
-
     document.getElementById("addSetBtn").addEventListener("click", () => {
       const weight = parseFloat(document.getElementById("logWeight").value) || 0;
       const reps = parseInt(document.getElementById("logReps").value) || 0;
@@ -2874,7 +2818,7 @@ export function createTrainingModule(ctx = {}) {
       }
       currentSets.push({ weight, reps, rir });
       renderSetsList();
-      let toastMsg = `Satz ${currentSets.length} gespeichert.`;
+      let toastMsg = `Satz ${currentSets.length} hinzugefügt.`;
       if (ex.mesoTargetSets) {
         if (currentSets.length === ex.mesoTargetSets) {
           toastMsg = `Soll erreicht (${ex.mesoTargetSets} Sätze).`;
@@ -2888,11 +2832,21 @@ export function createTrainingModule(ctx = {}) {
         }
       }
       showToast(toastMsg, "success", 1600);
-      if (navigator.vibrate) navigator.vibrate(30);
       saveActiveSession();
       startSetRestTimer({ setNumber: currentSets.length });
     });
 
+    const updatePrimaryLabel = () => {
+      const btn = document.getElementById("addSetBtn");
+      if (!btn) return;
+      const w = document.getElementById("logWeight")?.value;
+      const r = document.getElementById("logReps")?.value;
+      if (w && r) {
+        btn.textContent = `+ ${w}kg × ${r}`;
+      } else {
+        btn.textContent = "+ Satz loggen";
+      }
+    };
     document.getElementById("logWeight")?.addEventListener("input", updatePrimaryLabel);
     document.getElementById("logReps")?.addEventListener("input", updatePrimaryLabel);
 
